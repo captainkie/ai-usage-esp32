@@ -1,0 +1,27 @@
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# agent / tooling state
+.omc/
+.playwright-mcp/
+.claude/
+
+# node
+node_modules/
+npm-debug.log*
+
+# host build artifacts (mascot C test harness)
+*.o
+*.out
+/tmp/
+design/tools/*.ppm
+design/tools/*.png
+design/tools/mctest
+
+# Arduino build output
+build/
+*.bin
+*.elf

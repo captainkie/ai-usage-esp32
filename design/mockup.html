@@ -1,0 +1,697 @@
+<title>AI Usage Bar · ESP32 — Screen Preview</title>
+<style>
+  /* ---------- Page tokens (theme-aware chrome around the device) ---------- */
+  :root{
+    --bg:#e9ebf0; --bg2:#dfe2e9; --ink:#141720; --muted:#5b6070;
+    --line:rgba(20,22,32,.10); --accent:#c2643f; --card:#f4f5f8;
+    --shadow:rgba(20,22,40,.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0a0b10; --bg2:#0f1119; --ink:#e8eaf1; --muted:#8b91a2;
+      --line:rgba(255,255,255,.09); --accent:#e0885f; --card:#12141d;
+      --shadow:rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#e9ebf0; --bg2:#dfe2e9; --ink:#141720; --muted:#5b6070;
+    --line:rgba(20,22,32,.10); --accent:#c2643f; --card:#f4f5f8; --shadow:rgba(20,22,40,.18);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a0b10; --bg2:#0f1119; --ink:#e8eaf1; --muted:#8b91a2;
+    --line:rgba(255,255,255,.09); --accent:#e0885f; --card:#12141d; --shadow:rgba(0,0,0,.5);
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%),
+      linear-gradient(180deg, var(--bg), var(--bg2));
+    color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,"SF Pro Text",system-ui,sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+    padding:clamp(16px,4vw,48px) clamp(14px,4vw,32px) 64px;
+  }
+  .wrap{max-width:900px;margin:0 auto}
+
+  header.masthead{display:flex;flex-direction:column;gap:10px;margin-bottom:26px}
+  .eyebrow{
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;
+    font-size:12px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--accent);font-weight:600;
+  }
+  h1{
+    font-size:clamp(26px,5vw,40px);line-height:1.04;margin:0;font-weight:800;
+    letter-spacing:-.02em;text-wrap:balance;
+    font-family:ui-sans-serif,-apple-system,"SF Pro Display",system-ui,sans-serif;
+  }
+  h1 .thin{font-weight:400;color:var(--muted)}
+  .lede{color:var(--muted);font-size:clamp(14px,2.4vw,16.5px);line-height:1.55;max-width:60ch;margin:2px 0 0}
+  .lede b{color:var(--ink);font-weight:650}
+
+  /* ---------- Device (the hero) ---------- */
+  .bench{margin:30px 0 22px;display:flex;flex-direction:column;align-items:center}
+  .device-wrap{width:100%;max-width:760px}
+  .bezel{
+    position:relative;border-radius:26px;padding:16px;
+    background:linear-gradient(160deg,#26282f,#141519 60%,#0a0b0e);
+    box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 30px 60px -20px var(--shadow),0 6px 20px -8px rgba(0,0,0,.5);
+  }
+  .bezel::after{content:"";position:absolute;right:22px;bottom:9px;width:5px;height:5px;border-radius:50%;
+    background:#37e0a1;box-shadow:0 0 8px 1px #37e0a1aa;}
+  .screen-frame{
+    position:relative;width:100%;aspect-ratio:640/172;border-radius:12px;overflow:hidden;background:#04050a;
+    box-shadow:0 0 0 1.5px #000,0 0 0 3px #2a2c34,0 10px 30px -12px #000 inset;
+  }
+  .screen{
+    position:absolute;top:0;left:0;width:640px;height:172px;transform-origin:top left;
+    background:
+      radial-gradient(90% 140% at 20% 0%, #10131f 0%, transparent 55%),
+      radial-gradient(90% 140% at 80% 0%, #121019 0%, transparent 55%),
+      radial-gradient(120% 120% at 50% 120%, #0c0e18 0%, #05060c 70%);
+    color:#eaecf2;font-family:ui-sans-serif,-apple-system,"SF Pro Display",system-ui,sans-serif;overflow:hidden;
+  }
+  .screen .fx{position:absolute;inset:0;pointer-events:none;z-index:6}
+  .screen .fx.scan{background:repeating-linear-gradient(0deg, rgba(255,255,255,.020) 0 1px, transparent 1px 3px);mix-blend-mode:overlay;opacity:.5}
+  .screen .fx.vig{box-shadow:0 0 60px 12px rgba(0,0,0,.55) inset;border-radius:12px}
+
+  .mono{font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace}
+  .tnum{font-variant-numeric:tabular-nums}
+
+  .topbar{position:absolute;left:14px;right:14px;top:9px;height:20px;display:flex;align-items:center;justify-content:space-between;z-index:5}
+  .brand{display:flex;align-items:center;gap:7px}
+  .brand .glyph{width:12px;height:12px;border-radius:3px;background:linear-gradient(135deg,#e79b7d,#d97757);box-shadow:0 0 8px #d9775766}
+  .brand .txt{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.2em;color:#c9713f;font-weight:700}
+  .model{position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:700;letter-spacing:-.01em;color:#eef0f6}
+  .model .dim{color:#7b8194;font-weight:500}
+  .rightmeta{display:flex;align-items:center;gap:8px}
+  .chip{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.12em;font-weight:700;padding:2px 6px;border-radius:5px;background:#1a1d29;color:#aeb4c6;border:1px solid #262a38}
+  .live{display:flex;align-items:center;gap:5px;font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.14em;font-weight:700;color:#37e0a1}
+  .live .dot{width:6px;height:6px;border-radius:50%;background:#37e0a1;box-shadow:0 0 7px 1px #37e0a1cc;animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  .gaugeSVG{position:absolute;inset:0;z-index:2}
+  .glabel{position:absolute;font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.2em;font-weight:700;color:#767c90;text-align:center;width:120px;z-index:3}
+  .gval{position:absolute;width:120px;text-align:center;z-index:3}
+  .gval .num{font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1}
+  .gval .pct{font-size:14px;font-weight:700;opacity:.7;margin-left:1px}
+  .greset{position:absolute;width:150px;text-align:center;font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:600;color:#9aa0b2;z-index:3}
+  .greset .lbl{color:#5c6274}
+
+  .mascot{position:absolute;left:270px;top:41px;width:100px;height:100px;z-index:4;image-rendering:pixelated}
+
+  .pills{position:absolute;left:0;right:0;bottom:8px;display:flex;justify-content:center;gap:8px;z-index:5}
+  .pill{font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:700;letter-spacing:.06em;padding:4px 12px;border-radius:999px;cursor:pointer;user-select:none;background:#12141d;color:#767c90;box-shadow:0 0 0 1px #23273a inset;transition:all .18s ease}
+  .pill .d{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle;background:#4a4f60}
+  .pill.active{color:#0a0b10}
+  .pill.off{opacity:.4}
+
+  /* ---------- Controls ---------- */
+  .panel{width:100%;max-width:760px;margin:20px auto 0;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px 20px;display:flex;flex-direction:column;gap:16px}
+  .panel .row{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;justify-content:space-between}
+  .ctl-label{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:8px;display:block}
+  .segs{display:flex;gap:6px;flex-wrap:wrap}
+  .seg{font-size:13px;font-weight:650;padding:7px 14px;border-radius:10px;cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--ink);transition:.15s;font-family:inherit}
+  .seg[aria-pressed="true"]{background:var(--accent);color:#fff;border-color:transparent}
+  .seg:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .slbox{flex:1;min-width:260px}
+  input[type=range]{width:100%;accent-color:var(--accent);height:24px}
+  .sim{display:flex;align-items:center;gap:10px}
+  .toggle{font-size:13px;font-weight:650;padding:7px 14px;border-radius:10px;cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--ink);font-family:inherit}
+  .toggle[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:transparent}
+  .hint{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0}
+  .hint code,.hint .mono{font-family:ui-monospace,Menlo,monospace;font-size:11.5px}
+
+  .foot{max-width:760px;margin:26px auto 0;color:var(--muted);font-size:12.5px;line-height:1.6;text-align:center}
+  .foot .real{color:var(--ink);font-weight:600}
+
+  @media (prefers-reduced-motion: reduce){ .live .dot{animation:none} }
+
+  /* ---------- companion gallery (README asset, ?gallery) ---------- */
+  .gallery{margin:8px auto 0;max-width:820px;text-align:center;
+    background:radial-gradient(120% 140% at 50% 0%, #12131c, #08090f 75%);
+    border:1px solid #1c1f2b;border-radius:22px;padding:30px 24px 34px}
+  .gtitle{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0 0 6px;color:#eef0f6}
+  .gsub{font-size:13px;color:#8b91a2;margin:0 auto 26px;max-width:60ch;line-height:1.5}
+  .grow{display:flex;flex-wrap:wrap;justify-content:center;gap:16px}
+  .gcard{width:132px;padding:12px 8px 14px;border-radius:16px;background:#0c0e16;
+    border:1px solid #1b1e29;display:flex;flex-direction:column;align-items:center;gap:8px;
+    box-shadow:0 10px 24px -14px #000}
+  .gcv{width:104px;height:104px;image-rendering:pixelated}
+  .glabel2{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;letter-spacing:.04em;color:#c7cdda}
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <span class="eyebrow">ESP32-S3 · 3.49″ · 640×172 · Screen Preview</span>
+    <h1>AI Usage Bar <span class="thin">with a cat that feels your limits</span></h1>
+    <p class="lede">พรีวิวหน้าจอจริงขนาด <b>640×172</b> สำหรับบอร์ด Waveshare ESP32-S3-Touch-LCD-3.49 —
+      twin arc gauge สี traffic-light, countdown เดินจริง, ปุ่มสลับ provider แบบ touch และ
+      <b>เจ้าแมวพิกเซล</b> ที่เปลี่ยนสีตาม provider (ส้ม·เขียว·น้ำเงิน) และอารมณ์ตาม usage.
+      ลองเลื่อน slider ดูมันใส่แว่น 😎 → เหงื่อแตก 😰 → ไหม้ 🔥</p>
+  </header>
+
+  <div class="bench">
+    <div class="device-wrap">
+      <div class="bezel">
+        <div class="screen-frame">
+          <div class="screen" id="screen">
+            <div class="topbar">
+              <div class="brand"><span class="glyph"></span><span class="txt">AI·USAGE</span></div>
+              <div class="model" id="model">Opus 4.8 <span class="dim">· 1M</span></div>
+              <div class="rightmeta">
+                <span class="chip" id="effort">MAX</span>
+                <span class="live"><span class="dot"></span>LIVE</span>
+              </div>
+            </div>
+
+            <svg class="gaugeSVG" viewBox="0 0 640 172" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <filter id="glowL" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+                <filter id="glowR" x="-50%" y="-50%" width="200%" height="200%">
+                  <feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <path id="trackL" fill="none" stroke="#1b1f2c" stroke-width="8" stroke-linecap="round"/>
+              <path id="trackR" fill="none" stroke="#1b1f2c" stroke-width="8" stroke-linecap="round"/>
+              <path id="arcL" fill="none" stroke="#37e0a1" stroke-width="8" stroke-linecap="round" filter="url(#glowL)"/>
+              <path id="arcR" fill="none" stroke="#37e0a1" stroke-width="8" stroke-linecap="round" filter="url(#glowR)"/>
+            </svg>
+
+            <div class="glabel" id="labL">5-HOUR</div>
+            <div class="glabel" id="labR">WEEK</div>
+            <div class="gval" id="valL"><span class="num tnum">12</span><span class="pct">%</span></div>
+            <div class="gval" id="valR"><span class="num tnum">45</span><span class="pct">%</span></div>
+            <div class="greset" id="resL"><span class="lbl">⟲ </span>1h 14m</div>
+            <div class="greset" id="resR"><span class="lbl">⟲ </span>2d 06h</div>
+
+            <canvas class="mascot" id="mascot" width="120" height="120"></canvas>
+
+            <div class="pills" id="pills"></div>
+
+            <div class="fx scan"></div>
+            <div class="fx vig"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div>
+      <span class="ctl-label">Companion — เลือกตัวการ์ตูนพิกเซล (แตะที่ตัวบนจอก็สลับได้)</span>
+      <div class="segs" id="mascotSegs"></div>
+    </div>
+    <div>
+      <span class="ctl-label">Provider — แตะที่จอ หรือเลือกที่นี่ (ตัวการ์ตูนเปลี่ยนสีตาม)</span>
+      <div class="segs" id="provSegs"></div>
+    </div>
+    <div class="row">
+      <div class="slbox">
+        <span class="ctl-label">จำลอง usage 5 ชม. → ดูแมวเปลี่ยนอารมณ์ + สีเกจ</span>
+        <input type="range" id="sim" min="0" max="100" value="12" step="1" aria-label="simulate 5-hour usage">
+      </div>
+      <div class="sim">
+        <button class="toggle" id="auto" aria-pressed="false" type="button">▶ Auto-demo</button>
+      </div>
+    </div>
+    <p class="hint">แตะ pill บนจอเพื่อสลับ provider ได้เหมือน touchscreen จริง · สีเกจ:
+      <span class="mono">เขียว &lt;60% · เหลือง 60–85% · แดง &gt;85%</span> · แมวอ่านจากวงที่ usage สูงสุด</p>
+  </div>
+
+  <p class="foot">
+    นี่คือ <span class="real">simulation ของหน้าจอจริง</span> — เวอร์ชันบนบอร์ดจะเรนเดอร์ด้วย Arduino_GFX (จอ AXS15231B QSPI),
+    ดึงข้อมูลจาก Mac bridge ที่อ่าน token จาก Keychain แล้วเรียก <span class="mono">/api/oauth/usage</span>.
+    โอเคกับดีไซน์นี้ไหม เดี๋ยวผม build ลงบอร์ดจริงต่อ ✦
+  </p>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = s => document.querySelector(s);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- responsive scale ---------- */
+  const frame = $(".screen-frame"), screen = $("#screen");
+  const fit = () => { const s = frame.clientWidth / 640; screen.style.transform = `scale(${s})`; };
+  new ResizeObserver(fit).observe(frame); fit();
+
+  /* ---------- colour helpers ---------- */
+  const mixHex=(a,b,t)=>{const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+    const [ar,ag,ab]=p(a),[br,bg,bb]=p(b);const q=(x,y)=>Math.round(x+(y-x)*t).toString(16).padStart(2,"0");
+    return `#${q(ar,br)}${q(ag,bg)}${q(ab,bb)}`;};
+  const semColor = (u) => u >= 85 ? "#ff5d6e" : u >= 60 ? "#ffc24b" : "#37e0a1";
+
+  /* ---------- mock provider data ---------- */
+  const now = () => performance.now();
+  const mk = (mins) => now() + mins*60000;
+  const providers = {
+    claude:{ name:"Claude", color:"#e08040", model:'Opus 4.8 <span class="dim">· 1M</span>', effort:"MAX",
+      five:{util:12, reset:mk(74)}, seven:{util:45, reset:mk(2*1440+6*60)} },
+    codex: { name:"Codex", color:"#12b886", model:'GPT-5 <span class="dim">· Codex</span>', effort:"HIGH",
+      five:{util:63, reset:mk(125)}, seven:{util:71, reset:mk(4*1440+3*60)} },
+    gemini:{ name:"Gemini", color:"#4285f4", model:'Gemini 2.5 <span class="dim">· Pro</span>', effort:"—",
+      five:{util:8, reset:mk(42)}, seven:{util:22, reset:mk(5*1440)} },
+  };
+  const order = ["claude","codex","gemini"];
+  let active = "claude", simOverride = null;
+
+  /* ---------- gauge geometry (270°, gap at bottom) ---------- */
+  const GL={cx:120,cy:97,r:40}, GR={cx:520,cy:97,r:40};
+  const A0=-135, SPAN=270;
+  const p2c=(cx0,cy0,r,ang)=>{const a=(ang-90)*Math.PI/180;return {x:cx0+r*Math.cos(a),y:cy0+r*Math.sin(a)};};
+  const arcPath=(g,a0,a1)=>{const s=p2c(g.cx,g.cy,g.r,a1),e=p2c(g.cx,g.cy,g.r,a0);
+    const large=(a1-a0)<=180?0:1;return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${g.r} ${g.r} 0 ${large} 0 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;};
+  $("#trackL").setAttribute("d", arcPath(GL,A0,A0+SPAN));
+  $("#trackR").setAttribute("d", arcPath(GR,A0,A0+SPAN));
+
+  const posLabels=()=>{
+    const place=(el,x,y)=>{el.style.left=(x-el.offsetWidth/2)+"px";el.style.top=y+"px";};
+    place($("#labL"),GL.cx,31); place($("#labR"),GR.cx,31);
+    const vL=$("#valL"),vR=$("#valR"); vL.style.left=(GL.cx-60)+"px"; vR.style.left=(GR.cx-60)+"px";
+    vL.style.top=vR.style.top=(GL.cy-17)+"px";
+    const rL=$("#resL"),rR=$("#resR"); rL.style.left=(GL.cx-75)+"px"; rR.style.left=(GR.cx-75)+"px";
+    rL.style.top=rR.style.top=(GL.cy+48)+"px";
+  };
+
+  const gauge={L:{cur:0,tgt:12,el:$("#arcL"),val:$("#valL").firstElementChild,g:GL},
+               R:{cur:0,tgt:45,el:$("#arcR"),val:$("#valR").firstElementChild,g:GR}};
+  const drawGauge=(s)=>{
+    const u=Math.max(0,Math.min(100,s.cur));
+    s.el.setAttribute("d", arcPath(s.g, A0, A0 + SPAN*u/100 + 0.001));
+    const c=semColor(u); s.el.setAttribute("stroke",c);
+    s.val.textContent=Math.round(u); s.val.parentElement.style.color=c;
+  };
+
+  const fmt=(ms)=>{ if(ms<=0) return "now"; const m=Math.floor(ms/60000);
+    const d=Math.floor(m/1440), h=Math.floor((m%1440)/60), mm=m%60;
+    if(d>0) return `${d}d ${String(h).padStart(2,"0")}h`;
+    if(h>0) return `${h}h ${String(mm).padStart(2,"0")}m`;
+    return `${mm}m`; };
+
+  /* ============================================================
+     PIXEL CAT MASCOT — fur colour follows the active provider,
+     expression follows the busiest gauge.
+     ============================================================ */
+  const cv=$("#mascot"), cx=cv.getContext("2d"); cx.imageSmoothingEnabled=false;
+  const CW=cv.width, CH=cv.height, GW=24, GH=23, U=5, OYc=2;
+  const moodOf=(u)=> u>=98?"fried": u>=90?"stress": u>=75?"sweat": u>=50?"focus":"chill";
+  let blink=0, frame_i=0, catCur="#e08040", mascotKind="runner";
+
+  let G;
+  const newG=()=>{ G=[]; for(let y=0;y<GH;y++) G.push(new Array(GW).fill(null)); };
+  const gs=(x,y,c)=>{ x=Math.round(x); y=Math.round(y); if(c&&x>=0&&x<GW&&y>=0&&y<GH) G[y][x]=c; };
+  const gr=(x,y,w,h,c)=>{ for(let j=0;j<h;j++) for(let i=0;i<w;i++) gs(x+i,y+j,c); };
+  const gtri=(cxp,ay,by,hb,c)=>{ const h=by-ay; for(let y=ay;y<=by;y++){ const hw=Math.round(hb*(y-ay)/h); for(let x=cxp-hw;x<=cxp+hw;x++) gs(x,y,c);} };
+
+  const palette=(fur)=>({ fur,
+    dark:mixHex(fur,"#241119",.50), deep:mixHex(fur,"#120810",.82),
+    cream:"#f6ecda", creamSh:"#e0cfb2", pink:"#ff9fb2", inEar:"#f0a6bb" });
+
+  function faceExpr(p,mood,c){
+    const L=c-3,R=c+3,ey=9,dk="#160b11";
+    const closed = blink>0 && mood!=="chill" && mood!=="fried";
+    if(mood==="chill"){                                   // 😎 cool shades
+      gr(c-6,8,13,2,"#14171e"); gs(c-6,10,"#14171e"); gs(c+6,10,"#14171e");
+      gs(c-5,8,"#3b4553"); gs(c+1,8,"#3b4553");
+      gs(c-1,12,"#6b4436");gs(c,12,"#6b4436");gs(c+1,12,"#6b4436");gs(c+2,11,"#6b4436");
+    } else if(mood==="fried"){                            // 🤯 x-eyes
+      [[L-1,ey-1],[L+1,ey-1],[L,ey],[L-1,ey+1],[L+1,ey+1]].forEach(([x,y])=>gs(x,y,"#ff5d6e"));
+      [[R-1,ey-1],[R+1,ey-1],[R,ey],[R-1,ey+1],[R+1,ey+1]].forEach(([x,y])=>gs(x,y,"#ff5d6e"));
+      gr(c-2,12,5,2,"#2a0f10"); gr(c-1,12,3,1,"#ff8a8a");
+    } else if(closed){
+      gr(L-1,ey,2,1,"#241119"); gr(R-1,ey,2,1,"#241119");
+    } else if(mood==="focus"){
+      gr(L-1,ey-1,2,2,dk); gs(L,ey-1,"#fff7ea");
+      gr(R-1,ey-1,2,2,dk); gs(R,ey-1,"#fff7ea");
+      gs(c,12,"#6b4436");
+    } else if(mood==="sweat"){
+      gr(L-1,ey-1,2,2,dk); gr(R-1,ey-1,2,2,dk);
+      gr(c-1,12,3,2,"#3a1e18");
+    } else {                                              // stress
+      gs(L-1,ey-1,dk);gs(L,ey,dk); gs(R,ey,dk);gs(R+1,ey-1,dk);
+      [c-2,c-1,c,c+1,c+2].forEach((x,i)=>gs(x,12,i%2?"#8a5140":"#3a1e18"));
+    }
+    if(mood!=="chill"){ gs(c-1,11,p.pink); gs(c,11,p.pink); }   // nose
+  }
+
+  function buildCat(fur,mood){
+    newG(); const p=palette(fur); const c=12;
+    // tail (curled, behind body)
+    [[19,16],[20,15],[20,14],[19,13],[18,13],[20,16],[20,17]].forEach(([x,y])=>gs(x,y,p.dark));
+    // body
+    for(let y=14;y<=21;y++){ const hw=Math.round(4+(y-14)/7*4); gr(c-hw,y,hw*2+1,1,p.fur); }
+    for(let y=16;y<=21;y++){ const hw=Math.round(2+(y-16)/5*2); gr(c-hw,y,hw*2+1,1,p.cream); } // belly
+    [15,17,19].forEach(y=>{ gs(c-4,y,p.dark); gs(c+4,y,p.dark); });                             // stripes
+    gr(c-6,20,3,2,p.cream); gr(c+4,20,3,2,p.cream);                                             // front paws
+    // ears
+    gtri(c-5,2,7,3,p.fur); gtri(c+5,2,7,3,p.fur);
+    gtri(c-5,4,7,1,p.inEar); gtri(c+5,4,7,1,p.inEar);
+    // head
+    gr(c-7,6,15,8,p.fur);
+    [[c-7,6],[c+7,6],[c-7,13],[c+7,13]].forEach(([x,y])=>gs(x,y,null));
+    gr(c-4,11,9,3,p.cream);                                                                     // muzzle
+    [[c-3,7],[c-2,7],[c,7],[c+2,7],[c+3,7],[c-1,8],[c+1,8],[c,8]].forEach(([x,y])=>gs(x,y,p.dark)); // tabby M
+    for(let y=7;y<=12;y++){ gs(c-7,y,p.dark); gs(c+7,y,p.dark); }                               // side shade
+    faceExpr(p,mood,c);
+    return p;
+  }
+
+  /* ---- pixel robot (same grid, provider-coloured shell) ---- */
+  function robotEyes(mood,c,glow){
+    const ey=7;
+    const closed = blink>0 && mood!=="chill" && mood!=="fried";
+    if(closed){ gr(c-4,ey,2,1,glow); gr(c+2,ey,2,1,glow); return; }
+    if(mood==="chill"){ gs(c-4,ey,glow);gs(c-3,ey-1,glow);gs(c-2,ey,glow); gs(c+2,ey,glow);gs(c+3,ey-1,glow);gs(c+4,ey,glow); }
+    else if(mood==="fried"){
+      [[c-4,ey-1],[c-2,ey-1],[c-3,ey],[c-4,ey+1],[c-2,ey+1]].forEach(([x,y])=>gs(x,y,"#ff5d6e"));
+      [[c+2,ey-1],[c+4,ey-1],[c+3,ey],[c+2,ey+1],[c+4,ey+1]].forEach(([x,y])=>gs(x,y,"#ff5d6e"));
+    }
+    else if(mood==="stress"){ gs(c-4,ey-1,glow);gs(c-3,ey,glow); gs(c+3,ey,glow);gs(c+4,ey-1,glow); }
+    else if(mood==="sweat"){ gr(c-4,ey,2,1,glow); gr(c+2,ey,2,1,glow); }
+    else { gr(c-4,ey-1,2,2,glow); gr(c+2,ey-1,2,2,glow); }        // focus
+  }
+  function buildRobot(fur,mood){
+    newG(); const p=palette(fur); const c=12;
+    const metal="#cdd5e2", metalSh="#868ea1", visor="#0d1119";
+    const glow=mixHex(fur,"#ffffff",.5);
+    // antenna
+    gs(c,0, mood==="chill"?"#7dffd0":glow); gs(c,1,metalSh);
+    // head
+    gr(c-6,3,13,8,p.fur);
+    [[c-6,3],[c+6,3],[c-6,10],[c+6,10]].forEach(([x,y])=>gs(x,y,null));
+    gr(c-4,3,9,1,mixHex(fur,"#ffffff",.26));                       // top highlight
+    for(let y=4;y<=9;y++){ gs(c-6,y,p.dark); gs(c+6,y,p.dark); }   // side shade
+    gr(c-8,6,1,3,metalSh); gr(c+8,6,1,3,metalSh);                  // ear bolts
+    gs(c-8,7,metal); gs(c+8,7,metal);
+    // visor
+    gr(c-5,5,11,4,visor); gr(c-6,6,13,2,visor);
+    robotEyes(mood,c,glow);
+    // neck
+    gr(c-2,11,5,1,metalSh);
+    // body
+    gr(c-4,12,9,6,p.fur);
+    [[c-4,12],[c+4,12],[c-4,17],[c+4,17]].forEach(([x,y])=>gs(x,y,null));
+    gr(c-4,12,9,1,mixHex(fur,"#ffffff",.2));
+    for(let y=13;y<=16;y++){ gs(c-4,y,p.dark); gs(c+4,y,p.dark); }
+    // chest LED (state colour)
+    const led = mood==="fried"?"#ff5d6e":mood==="stress"?"#ffb020":mood==="sweat"?"#ffd24b":mood==="focus"?"#7fd7ff":"#37e0a1";
+    gr(c-1,14,3,3,visor); gs(c,15,led); gs(c-1,15,mixHex(led,"#000000",.35)); gs(c+1,15,mixHex(led,"#000000",.35));
+    // arms
+    gr(c-6,13,2,3,metalSh); gr(c+5,13,2,3,metalSh); gs(c-6,16,metal); gs(c+6,16,metal);
+    // feet
+    gr(c-3,18,3,2,metalSh); gr(c+1,18,3,2,metalSh);
+    return p;
+  }
+
+  /* ---- shared eyes for organic critters ---- */
+  function faceEyes(mood,c,ey,glow){
+    const L=c-3,R=c+2,dk="#160b11";
+    const closed=blink>0 && mood!=="chill" && mood!=="fried";
+    if(closed){ gr(L,ey,2,1,glow); gr(R,ey,2,1,glow); return; }
+    if(mood==="fried"){
+      [[L,ey-1],[L+2,ey-1],[L+1,ey],[L,ey+1],[L+2,ey+1]].forEach(([x,y])=>gs(x,y,"#ff5d6e"));
+      [[R-1,ey-1],[R+1,ey-1],[R,ey],[R-1,ey+1],[R+1,ey+1]].forEach(([x,y])=>gs(x,y,"#ff5d6e"));
+    } else if(mood==="stress"){
+      gs(L,ey-1,glow);gs(L+1,ey,glow); gs(R,ey,glow);gs(R+1,ey-1,glow);
+    } else if(mood==="chill"){
+      gs(L,ey,glow);gs(L+1,ey-1,glow);gs(L+2,ey,glow); gs(R-1,ey,glow);gs(R,ey-1,glow);gs(R+1,ey,glow);
+    } else {
+      gr(L,ey-1,2,2,dk); gs(L,ey-1,glow);
+      gr(R,ey-1,2,2,dk); gs(R+1,ey-1,glow);
+    }
+  }
+
+  /* ---- husky ---- */
+  function buildHusky(fur,mood){
+    newG(); const p=palette(fur); const c=12; const eyeC="#5ec8ff";
+    [[18,12],[19,11],[20,11],[20,12],[19,13]].forEach(([x,y])=>gs(x,y,p.fur));   // fluffy tail
+    gs(19,11,p.cream); gs(20,11,p.cream);
+    for(let y=13;y<=21;y++){ const hw=Math.round(4+(y-13)/8*4); gr(c-hw,y,hw*2+1,1,p.fur); }
+    for(let y=15;y<=21;y++){ const hw=Math.round(2+(y-15)/6*2); gr(c-hw,y,hw*2+1,1,p.cream); }
+    gr(c-6,20,3,2,p.cream); gr(c+4,20,3,2,p.cream);
+    gtri(c-6,1,7,2,p.fur); gtri(c+6,1,7,2,p.fur);
+    gtri(c-6,4,7,1,p.pink); gtri(c+6,4,7,1,p.pink);
+    gtri(c-6,1,4,1,p.dark); gtri(c+6,1,4,1,p.dark);
+    gr(c-6,5,13,7,p.fur); gs(c-6,5,null); gs(c+6,5,null);
+    gr(c-2,5,5,4,p.cream);                       // blaze
+    gr(c-4,9,9,3,p.cream);                        // muzzle
+    gr(c-6,6,2,2,p.dark); gr(c+5,6,2,2,p.dark);   // mask
+    faceEyes(mood,c,7,eyeC);
+    gs(c,10,"#20140f"); gs(c-1,10,"#20140f");
+    if(mood==="chill"){ gr(c-1,12,3,1,"#ff8fa3"); gs(c,13,"#ff6f88"); }  // tongue
+    return p;
+  }
+
+  /* ---- owl ---- */
+  function owlEyes(mood,c,ex,ey){
+    const closed=blink>0 && mood!=="fried";
+    [-1,1].forEach(sgn=>{ const e=c+sgn*ex;
+      if(closed){ gr(e-1,ey,2,1,"#3a2a10"); return; }
+      if(mood==="fried"){ gs(e-1,ey-1,"#ff5d6e");gs(e+1,ey-1,"#ff5d6e");gs(e,ey,"#ff5d6e");gs(e-1,ey+1,"#ff5d6e");gs(e+1,ey+1,"#ff5d6e"); return; }
+      if(mood==="stress"){ gr(e-1,ey-1,3,3,"#20140a"); gs(e,ey,"#ffd24b"); return; }
+      gr(e-1,ey-1,3,3,"#20140a"); gs(e,ey,"#5ec8ff"); gs(e-1,ey-1,"#ffffff");
+      if(mood==="chill"){ gr(e-1,ey-1,3,1,"#f6ecda"); }
+    });
+  }
+  function buildOwl(fur,mood){
+    newG(); const p=palette(fur); const c=12;
+    for(let y=6;y<=21;y++){ const dy=(y-13.5)/8; const hw=Math.round(8*Math.sqrt(Math.max(0,1-dy*dy))); if(hw>0) gr(c-hw,y,hw*2+1,1,p.fur); }
+    for(let y=11;y<=20;y++){ const dy=(y-15)/6; const hw=Math.round(4*Math.sqrt(Math.max(0,1-dy*dy))); if(hw>0) gr(c-hw,y,hw*2+1,1,p.cream); }
+    gtri(c-6,3,6,1,p.fur); gtri(c+6,3,6,1,p.fur);                       // ear tufts
+    for(let y=9;y<=18;y++){ gs(c-8,y,p.dark); gs(c+8,y,p.dark); }        // wings
+    gs(c-7,18,p.dark); gs(c+7,18,p.dark);
+    const ex=4, ey=9;
+    [-1,1].forEach(sgn=>{ const e=c+sgn*ex; gr(e-2,ey-2,4,4,"#f6ecda");
+      gs(e-2,ey-2,null);gs(e+1,ey-2,null);gs(e-2,ey+1,null);gs(e+1,ey+1,null); });
+    owlEyes(mood,c,ex,ey);
+    gs(c,11,"#f4a53a");gs(c-1,12,"#e8902a");gs(c,12,"#e8902a");gs(c+1,12,"#f4a53a");gs(c,13,"#d97e20"); // beak
+    gs(c-2,21,"#f4a53a");gs(c-1,21,"#f4a53a"); gs(c+1,21,"#f4a53a");gs(c+2,21,"#f4a53a");                // feet
+    return p;
+  }
+
+  /* ---- terminator T-800 ---- */
+  function buildTerminator(fur,mood,t){
+    newG(); const c=12;
+    const metal=mixHex(fur,"#c8ccd6",.60), sh=mixHex(fur,"#565b67",.5), deepm=mixHex(fur,"#2a2d35",.55);
+    const p={fur:metal,dark:sh,deep:"#171922",cream:metal,creamSh:sh,pink:"#ff5d6e",inEar:sh};
+    for(let y=3;y<=10;y++){ const dy=(y-7)/5; const hw=Math.round(7*Math.sqrt(Math.max(0,1-dy*dy))); if(hw>0) gr(c-hw,y,hw*2+1,1,metal); }
+    gr(c-6,8,13,1,sh);
+    gr(c-5,7,3,2,"#0a0b0f"); gr(c+3,7,3,2,"#0a0b0f");                    // sockets
+    const fl=(Math.floor(t/120)%5===0)?"#ff9a9a":"#ff2a2a";
+    gs(c-4,7,fl); gs(c-4,8,"#8a0000");
+    gs(c+4,7, mood==="fried"?"#360000":"#ff2a2a"); gs(c+4,8,"#7a0000");  // fried: dead eye
+    gs(c-6,10,sh); gs(c+6,10,sh);                                        // cheekbones
+    gr(c-5,11,11,1,metal);
+    gr(c-5,12,11,2,"#0a0b0f");
+    for(let x=c-5;x<=c+5;x+=2) gs(x,12,metal);                          // upper teeth
+    for(let x=c-4;x<=c+4;x+=2) gs(x,13,metal);                          // lower teeth
+    gr(c-4,14,9,1,metal);
+    gr(c-1,15,3,2,sh); gs(c,16,metal);                                  // neck spine
+    gr(c-5,17,11,2,deepm); gr(c-6,18,13,1,metal); gr(c-6,19,13,1,sh);   // shoulders
+    return p;
+  }
+
+  /* ---- runner ---- */
+  // Runner = Arnold / T-800 in leather + shades, striding with a shotgun
+  function buildRunner(fur,mood,t){
+    newG(); const c=12; const p=palette(fur);
+    const skin="#e6ac82", hair="#211a13";
+    const leather=mixHex(fur,"#241d2b",.42), lapel=fur;
+    const gun="#484c56", gunDk="#191b22", wood="#6b3f22", pants="#242736", boot="#14141b";
+    const stride=(Math.floor(t/160)%2===0), y0=2;
+    gr(c-2,y0,5,2,hair); gr(c-2,y0,5,1,mixHex(hair,"#000000",.4));       // hair
+    gr(c-2,y0+2,5,3,skin); gs(c-2,y0+2,null);                            // head
+    gr(c-2,y0+3,5,1,"#0d0f15"); gs(c-1,y0+3,"#2f3644");                  // shades
+    gs(c,y0+4, mood==="fried"?"#ff5d6e":"#6a4636");                      // stern mouth
+    gr(c-3,y0+5,6,5,leather); gr(c-3,y0+5,6,1,mixHex(leather,"#ffffff",.16)); // jacket + collar
+    gs(c-3,y0+6,lapel); gs(c+2,y0+6,lapel);                             // provider-colour lapels
+    gs(c,y0+6,mixHex(leather,"#000000",.5)); gs(c,y0+7,mixHex(leather,"#000000",.5)); // zipper
+    const gy=y0+7;
+    gr(c+3,gy,5,1,gun); gr(c+3,gy,2,1,gunDk); gs(c+7,gy,gunDk);         // shotgun barrel
+    gr(c+3,gy+1,2,1,wood);                                              // fore-grip
+    gr(c+2,gy-1,2,2,leather); gr(c-4,y0+6,2,2,leather);                 // arms
+    gr(c-3,y0+10,6,1,"#120f16");                                        // belt
+    const ly=y0+11;
+    if(stride){ gr(c-2,ly,2,3,pants); gr(c-3,ly+2,2,1,boot); gr(c+1,ly,2,3,pants); gr(c+1,ly+2,2,1,boot); }
+    else { gr(c-2,ly,2,3,pants); gr(c-2,ly+2,2,1,boot); gr(c,ly,2,3,pants); gr(c+2,ly+1,2,2,pants); gr(c+3,ly+2,2,1,boot); }
+    gs(c-5,y0+6,mixHex(fur,"#ffffff",.35)); gs(c-6,y0+8,mixHex(fur,"#ffffff",.28)); // motion streaks
+    return p;
+  }
+
+  /* ---- dino (dev-culture T-Rex) ---- */
+  function buildDino(fur,mood,t){
+    newG(); const c=12; const p=palette(fur);
+    [[3,14],[4,14],[2,15],[5,13]].forEach(([x,y])=>gs(x,y,p.fur));      // tail
+    gr(6,11,8,5,p.fur);                                                 // body
+    gr(13,7,6,5,p.fur); gr(14,7,5,1,mixHex(fur,"#ffffff",.2));          // head
+    gr(18,10,2,2,p.fur);                                               // snout
+    if(mood==="fried"){ gs(15,8,"#ff5d6e");gs(16,9,"#ff5d6e"); }
+    else if(blink>0){ gs(15,8,"#20140f"); }
+    else { gr(15,8,2,1,"#20140f"); gs(15,8,"#ffffff"); }
+    gr(15,11,5,1,mood==="stress"||mood==="fried"?"#3a1010":"#2a1a10");  // mouth
+    gr(13,12,2,1,p.dark);                                              // tiny arm
+    [12,13,14].forEach(y=>gs(7,y,mixHex(fur,"#ffffff",.18)));          // belly
+    const stride=(Math.floor(t/150)%2===0);
+    if(stride){ gr(7,16,2,3,p.fur); gr(11,16,2,2,p.fur); gs(11,18,p.dark); gs(7,19,p.dark); }
+    else { gr(8,16,2,2,p.fur); gr(10,16,2,3,p.fur); gs(8,18,p.dark); gs(10,19,p.dark); }
+    return p;
+  }
+
+  const BUILDERS={ cat:buildCat, robot:buildRobot, husky:buildHusky, owl:buildOwl,
+                   terminator:buildTerminator, runner:buildRunner, dino:buildDino };
+
+  function drawMascot(fur,u,t){
+    const mood=moodOf(u);
+    catCur = mixHex(catCur, fur, .14);
+    const heat = mood==="fried"? mixHex(catCur,"#ff5344",.30) : mood==="stress"? mixHex(catCur,"#ff5344",.15) : catCur;
+    const p = (BUILDERS[mascotKind]||buildCat)(heat,mood,t);
+    cx.clearRect(0,0,CW,CH);
+    const bob = reduce?0:Math.round(Math.sin(t/560)*3);
+    const P=(x,y)=>[x*U, OYc*U+bob+y*U];
+    // grounding shadow
+    cx.fillStyle="rgba(0,0,0,.26)";
+    cx.beginPath(); cx.ellipse(CW/2, OYc*U+(GH+0.4)*U, 26-Math.abs(bob), 4, 0,0,Math.PI*2); cx.fill();
+    // outline (empty cell adjacent to a fill)
+    cx.fillStyle=p.deep;
+    for(let y=0;y<GH;y++) for(let x=0;x<GW;x++){ if(G[y][x])continue;
+      if((y>0&&G[y-1][x])||(y<GH-1&&G[y+1][x])||(x>0&&G[y][x-1])||(x<GW-1&&G[y][x+1])){ const[a,b]=P(x,y); cx.fillRect(a,b,U,U);} }
+    // fills
+    for(let y=0;y<GH;y++) for(let x=0;x<GW;x++){ const cc=G[y][x]; if(!cc)continue; const[a,b]=P(x,y); cx.fillStyle=cc; cx.fillRect(a,b,U,U);}
+    // whiskers (cat only) — thin strokes fanning from the cheeks
+    if(mascotKind==="cat"){
+      const yo=OYc*U+bob;
+      cx.strokeStyle="rgba(246,236,218,.8)"; cx.lineWidth=1.3; cx.lineCap="round";
+      const wl=(x1,y1,x2,y2)=>{ cx.beginPath(); cx.moveTo(x1*U,yo+y1*U); cx.lineTo(x2*U,yo+y2*U); cx.stroke(); };
+      wl(5.6,10.3, 1.4,9.4);  wl(5.6,11.2, 1.4,11.9);   // left
+      wl(18.4,10.3, 22.6,9.4); wl(18.4,11.2, 22.6,11.9); // right
+    }
+    // sweat drop (organic critters only)
+    if((mood==="sweat"||mood==="stress") && ["cat","husky","owl","robot","runner"].includes(mascotKind)){
+      const off=reduce?0:((Math.floor(t/240)+(mood==="stress"?1:0))%4);
+      const[a,b]=P(18.6,9+off); cx.fillStyle="#7fd0ff"; cx.fillRect(a,b,U,U*1.2); cx.fillStyle="#c9ecff"; cx.fillRect(a,b,U,U*.4);
+    }
+    // steam for fried
+    if(mood==="fried"){
+      const s=(Math.floor(t/200))%3;
+      const[a,b]=P(8+s,1); cx.fillStyle="rgba(255,150,110,.8)"; cx.fillRect(a,b,U*.8,U*.8);
+      const[d,e]=P(15-s,0); cx.fillStyle="rgba(255,190,150,.7)"; cx.fillRect(d,e,U*.8,U*.8);
+    }
+  }
+
+  /* ---------- provider pills + controls ---------- */
+  function buildPills(){
+    const el=$("#pills"); el.innerHTML="";
+    const segs=$("#provSegs"); segs.innerHTML="";
+    order.forEach(k=>{
+      const pr=providers[k];
+      const b=document.createElement("div");
+      b.className="pill"+(k===active?" active":"");
+      b.innerHTML=`<span class="d"></span>${pr.name}`;
+      if(k===active){ b.style.background=`linear-gradient(135deg, ${mixHex(pr.color,'#ffffff',.28)}, ${pr.color})`;
+        b.style.boxShadow=`0 0 14px ${pr.color}55, 0 0 0 1px ${mixHex(pr.color,'#ffffff',.3)} inset`;
+        b.querySelector(".d").style.background="rgba(0,0,0,.55)"; }
+      else { b.querySelector(".d").style.background=pr.color; }
+      b.onclick=()=>setProvider(k);
+      el.appendChild(b);
+      const s=document.createElement("button");
+      s.className="seg"; s.type="button"; s.textContent=pr.name;
+      s.setAttribute("aria-pressed", k===active); s.onclick=()=>setProvider(k);
+      segs.appendChild(s);
+    });
+  }
+  function setProvider(k){
+    active=k; simOverride=null;
+    const pr=providers[k];
+    $("#model").innerHTML=pr.model;
+    const ef=$("#effort"); ef.textContent=pr.effort; ef.style.display=(pr.effort && pr.effort!=="—")?"":"none";
+    gauge.L.tgt=pr.five.util; gauge.R.tgt=pr.seven.util;
+    $("#sim").value=Math.round(pr.five.util);
+    buildPills();
+  }
+  $("#sim").addEventListener("input",e=>{ simOverride=+e.target.value; gauge.L.tgt=simOverride; });
+  let auto=false, autoDir=1;
+  $("#auto").addEventListener("click",e=>{
+    auto=!auto; e.target.setAttribute("aria-pressed",auto);
+    e.target.textContent = auto ? "⏸ Auto-demo" : "▶ Auto-demo";
+    if(auto) simOverride = simOverride ?? gauge.L.tgt;
+  });
+
+  const kinds=[
+    {k:"cat",label:"🐱 Cat"},{k:"robot",label:"🤖 Robot"},{k:"husky",label:"🐺 Husky"},
+    {k:"owl",label:"🦉 Owl"},{k:"terminator",label:"💀 T-800"},{k:"runner",label:"🏃 Runner"},
+    {k:"dino",label:"🦖 Dino"},
+  ];
+  function buildMascotPicker(){
+    const el=$("#mascotSegs"); el.innerHTML="";
+    kinds.forEach(({k,label})=>{
+      const s=document.createElement("button"); s.className="seg"; s.type="button"; s.textContent=label;
+      s.setAttribute("aria-pressed", k===mascotKind); s.onclick=()=>{ mascotKind=k; buildMascotPicker(); };
+      el.appendChild(s);
+    });
+  }
+  cv.style.cursor="pointer"; cv.title="tap to switch companion";
+  cv.addEventListener("click",()=>{ const ks=kinds.map(x=>x.k); mascotKind=ks[(ks.indexOf(mascotKind)+1)%ks.length]; buildMascotPicker(); });
+
+  buildMascotPicker(); setProvider("claude"); posLabels();
+
+  /* ---------- companion gallery (README asset) — ?gallery ---------- */
+  function blitTo(ctx,deep,kind){
+    const oy=OYc*U; ctx.clearRect(0,0,120,120); ctx.fillStyle=deep;
+    for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){ if(G[y][x])continue;
+      if((y>0&&G[y-1][x])||(y<GH-1&&G[y+1][x])||(x>0&&G[y][x-1])||(x<GW-1&&G[y][x+1])) ctx.fillRect(x*U,oy+y*U,U,U); }
+    for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){ const cc=G[y][x]; if(!cc)continue; ctx.fillStyle=cc; ctx.fillRect(x*U,oy+y*U,U,U); }
+    if(kind==="cat"){ ctx.strokeStyle="rgba(246,236,218,.8)";ctx.lineWidth=1.3;ctx.lineCap="round";
+      const wl=(x1,y1,x2,y2)=>{ctx.beginPath();ctx.moveTo(x1*U,oy+y1*U);ctx.lineTo(x2*U,oy+y2*U);ctx.stroke();};
+      wl(5.6,10.3,1.4,9.4);wl(5.6,11.2,1.4,11.9);wl(18.4,10.3,22.6,9.4);wl(18.4,11.2,22.6,11.9); }
+  }
+  function buildGallery(){
+    [".masthead",".bench",".panel",".foot"].forEach(s=>{const el=$(s); if(el) el.style.display="none";});
+    const items=[
+      {k:"cat",m:"chill",c:"#e08040",name:"🐱 Cat"},{k:"robot",m:"focus",c:"#e08040",name:"🤖 Robot"},
+      {k:"husky",m:"chill",c:"#8892a6",name:"🐺 Husky"},{k:"owl",m:"focus",c:"#b07a3a",name:"🦉 Owl"},
+      {k:"terminator",m:"focus",c:"#7f8694",name:"💀 T-800"},{k:"runner",m:"focus",c:"#12b886",name:"🏃 Runner"},
+      {k:"dino",m:"focus",c:"#4285f4",name:"🦖 Dino"},
+    ];
+    const g=document.createElement("div"); g.className="gallery";
+    g.innerHTML=`<h2 class="gtitle">Pick your pixel companion</h2>
+      <p class="gsub">7 ตัวให้เลือก · แตะที่ตัวบนจอเพื่อสลับ · สีเปลี่ยนตาม provider (🟠 Claude · 🟢 Codex · 🔵 Gemini) · อารมณ์เปลี่ยนตาม usage (ชิล → โฟกัส → เหงื่อแตก → เครียด → ไหม้)</p>
+      <div class="grow"></div>`;
+    $(".wrap").appendChild(g);
+    const row=g.querySelector(".grow");
+    items.forEach(it=>{
+      const card=document.createElement("div"); card.className="gcard";
+      const cv2=document.createElement("canvas"); cv2.width=120; cv2.height=120; cv2.className="gcv";
+      const ctx2=cv2.getContext("2d"); ctx2.imageSmoothingEnabled=false;
+      const p=BUILDERS[it.k](it.c,it.m,60); blitTo(ctx2,p.deep,it.k);
+      const lb=document.createElement("div"); lb.className="glabel2"; lb.textContent=it.name;
+      card.appendChild(cv2); card.appendChild(lb); row.appendChild(card);
+    });
+  }
+
+  let last=now();
+  function loop(t){
+    const dt=t-last; last=t;
+    if(auto){
+      let v=(simOverride??0)+autoDir*dt*0.018;
+      if(v>=100){v=100;autoDir=-1;} if(v<=0){v=0;autoDir=1;}
+      simOverride=v; gauge.L.tgt=v; $("#sim").value=Math.round(v);
+    }
+    ["L","R"].forEach(k=>{const s=gauge[k]; s.cur+=(s.tgt-s.cur)*Math.min(1,dt/240); drawGauge(s);});
+    const pr=providers[active];
+    $("#resL").innerHTML=`<span class="lbl">⟲ </span>${fmt(pr.five.reset-t)}`;
+    $("#resR").innerHTML=`<span class="lbl">⟲ </span>${fmt(pr.seven.reset-t)}`;
+    if(!reduce){ frame_i++; if(frame_i%220===0) blink=8; if(blink>0) blink--; }
+    drawMascot(pr.color, Math.max(gauge.L.cur,gauge.R.cur), t);
+    posLabels();
+    requestAnimationFrame(loop);
+  }
+  if(new URLSearchParams(location.search).has("gallery")) buildGallery();
+  else requestAnimationFrame(loop);
+})();
+</script>

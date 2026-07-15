@@ -1,0 +1,12 @@
+{
+  "name": "ai-usage-bridge",
+  "version": "1.0.0",
+  "description": "Reads your local Claude Code login and serves your Anthropic usage as LAN JSON for the AI Usage Bar ESP32 display. Zero dependencies.",
+  "type": "module",
+  "bin": { "ai-usage-bridge": "./ai-usage-bridge.mjs" },
+  "scripts": {
+    "start": "node ai-usage-bridge.mjs"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}

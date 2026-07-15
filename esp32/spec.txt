@@ -1,0 +1,99 @@
+https://www.waveshare.com/esp32-s3-touch-lcd-3.49.htm?&aff_id=119189
+
+ESP32-S3 High-Performance Development Board With 3.49inch IPS Capacitive Touch Display, 172 × 640 Resolution, Integrated With ESP32-S3R8 Dual-core Processor
+
+ESP32-S3 3.49inch Touch LCD
+Development Board
+QSPI Display, Audio Input/Output, Supports AI Interaction And Offline Voice Control
+
+Version Options
+- ESP32-S3-Touch-LCD-3.49 Case A version, comes with a 18650 Lithium battery (can be installed inside the case)
+- ESP32-S3-Touch-LCD-3.49-EN Case A version, without battery
+- ESP32-S3-Touch-LCD-3.49BCase B version, comes with a 3.7V Lithium polymer battery (can be installed inside the case)
+- ESP32-S3-Touch-LCD-3.49B-EN Case B version, without battery
+
+LCD Parameters
+DISPLAY PANEL	LCD	DISPLAY SIZE	3.49 inch
+RESOLUTION	172 × 640	DISPLAY COLORS	16.7M
+BRIGHTNESS	350 cd/m2	CONTRAST RATIO	1200:1
+DISPLAY INTERFACE	QSPI	DRIVER IC	AXS15231B
+TOUCH INTERFACE	I2C	TOUCH TYPE	Capacitive touch
+
+Features
+The ESP32-S3-Touch-LCD-3.49 is a high-performance, highly integrated microcontroller development board designed by Waveshare. Onboard 3.49inch capacitive touch IPS display, highly integrated power management IC, 6-axis IMU (3-axis accelerometer and 3-axis gyroscope), RTC chip, low-power audio codec IC, echo cancellation circuit, and so on, which makes it easy for you to develop and integrate into the products quickly.
+
+Equipped with ESP32-S3R8 Xtensa 32-bit LX7 dual-core processor, up to 240MHz main frequency
+Supports 2.4GHz Wi-Fi (802.11 b/g/n) and Bluetooth 5 (LE), with onboard antenna
+Built-in 512KB of SRAM and 384KB ROM, with onboard 8MB PSRAM and an external 16MB Flash memory
+Onboard 3.49inch IPS capacitive touch display for clear color picture display, 172 × 640 resolution, 16.7M color
+Equipped with dual microphone array with noise reduction and echo cancellation circuit, suitable for accurate speech recognition and near/far-field wake-up
+Built-in AXS15231B LCD & touch controller, using QSPI and I2C interfaces for communication respectively
+Onboard QMI8658 6-axis IMU (3-axis accelerometer and 3-axis gyroscope) for detecting motion gestures, counting steps, etc.
+Onboard PCF85063 RTC chip for RTC functionality
+Onboard PWR and BOOT programmable buttons for easy custom function development
+Onboard 3.7V MX1.25 Lithium battery recharge/discharge header or 18650 Lithium battery holder
+Onboard TF card slot for extended storage and fast data transfer, suitable for applications such as data recording and media playback, simplifying circuit design
+Reserved 22PIN 2.54mm pitch through-hole pads for easy connection to external modules or functional expansion, enhancing development flexibility.
+
+Onboard Audio Codec
+Supports High-Quality Audio Processing, Providing Clear And High-Quality Audio Input And Output
+
+ESP32-S3-Touch-LCD-3.49, Supports high-quality audio processing, providing clear and high-quality audio input and output
+
+Supports AI Speech Interaction
+Allows Access To Online Large Model Platforms Such As DeepSeek, Doubao, Etc.
+
+ESP32-S3 Touch LCD 3.49, allows accessing to online large model platforms
+
+PS Display Panel
+Excellent Display Performance, 16.7M Color, Wide Viewing Angle
+
+Capacitive Touch
+Suitable For Various Smart Device Development, Enabling Human-Machine Interaction
+
+Supports ESP-IDF, Arduino IDE
+Comprehensive SDK, Dev Resources, Tutorials To Help You Easily Get Started
+
+Wi-Fi And BLE 5 Support
+ESP32-S3 Integrates 2.4 GHz Wi-Fi (802.11 B/G/N) With 40 MHz Of Bandwidth Support,
+Its Bluetooth Low Energy Subsystem Supports Bluetooth 5 (LE) And Bluetooth Mesh
+
+What's On Board
+ESP32-S3R8
+Wi-Fi and Bluetooth SoC, up to 240MHz operating frequency, with onboard 8MB PSRAM
+Onboard antenna
+supports 2.4GHz Wi-Fi (802.11 b/g/n) and Bluetooth 5 (LE)
+TCA9554PWR
+8-bit I2C GPIO expansion chip
+W25Q128JVSI
+16MB Flash memory
+ES8311 DAC audio encoding chip
+high-performance, low-power audio DAC
+ES7210 ADC audio decoding chip
+high-performance, low-power audio ADC, supports multiple microphone inputs
+
+QMI8658
+3-axis gyroscope and 3-axis accelerometer, suitable for applications such as attitude sensing and motion recognition
+Dual microphone array design
+dual microphone, supports more advanced voice interaction functions
+ 
+TF card slot
+supports FAT32-formatted TF card for data expansion
+RESET button (back side)
+press the BOOT, then click the RESET button to enter download mode
+PWR power button (back side)
+Enables power control via software configuration when using Lithium battery for power supply
+BOOT button (back side)
+press the BOOT, then click the RESET button to enter download mode
+MX1.25 2PIN speaker header (back side)
+audio signal output, for connecting external speaker
+IPEX1 connector
+for connecting external antenna, enabled via resoldering an onboard resistor
+22PIN 2.54mm pitch through-hole pads
+for connecting external modules and enabling functional expansion
+Type-C port
+for program burning and log printing
+PCF85063
+RTC clock chip, supports time retention
+
+Outline Dimensions

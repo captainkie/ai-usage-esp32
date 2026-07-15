@@ -1,0 +1,280 @@
+#!/usr/bin/env node
+// AI Usage Bridge — reads your local Claude Code login, asks Anthropic for your
+// own usage, and serves it as plain JSON on your LAN so an ESP32 (or anything)
+// can display it. Zero dependencies — Node's stdlib only.
+//
+//   node ai-usage-bridge.mjs           # serve on 0.0.0.0:8787
+//   PORT=9000 node ai-usage-bridge.mjs # custom port
+//
+// Privacy: your token is read locally and used ONLY to call
+// https://api.anthropic.com/api/oauth/usage (the same endpoint Claude Code's
+// /status uses). It is never written to disk or sent anywhere else. The JSON we
+// expose contains percentages + reset times + model name — never the token.
+
+import http from "node:http";
+import https from "node:https";
+import { execFile } from "node:child_process";
+import { readFile, readdir, stat, open } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const PORT = Number(process.env.PORT || 8787);
+const HOST = process.env.HOST || "0.0.0.0";
+const HOME = os.homedir();
+const UA = "AIUsageBridge/1.0 (self-hosted)";
+
+/* ------------------------------------------------------------------ *
+ * 1. Read Claude Code's OAuth credentials (no Keychain prompt on mac) *
+ * ------------------------------------------------------------------ */
+function execFileP(cmd, args) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { timeout: 5000 }, (err, stdout) =>
+      err ? reject(err) : resolve(stdout));
+  });
+}
+
+async function readClaudeToken() {
+  // a) macOS login Keychain — read via Apple's own `security` tool so the
+  //    Apple-signed binary reads the item without a GUI prompt.
+  if (process.platform === "darwin") {
+    try {
+      const out = await execFileP("/usr/bin/security",
+        ["find-generic-password", "-w", "-s", "Claude Code-credentials"]);
+      const tok = pickToken(JSON.parse(out));
+      if (tok) return tok;
+    } catch { /* fall through to file */ }
+  }
+  // b) Cross-platform fallback — the credentials file Claude Code writes.
+  for (const rel of [".claude/.credentials.json", ".config/claude/.credentials.json"]) {
+    const fp = path.join(HOME, rel);
+    if (existsSync(fp)) {
+      try {
+        const tok = pickToken(JSON.parse(await readFile(fp, "utf8")));
+        if (tok) return tok;
+      } catch { /* try next */ }
+    }
+  }
+  return null;
+}
+
+// The credential blob is `{ claudeAiOauth: { accessToken, ... } }`.
+function pickToken(obj) {
+  const o = obj?.claudeAiOauth ?? obj;
+  return o?.accessToken || o?.access_token || null;
+}
+
+/* ------------------------------------------------------------------ *
+ * 2. Ask Anthropic for this account's usage                          *
+ * ------------------------------------------------------------------ */
+function fetchUsage(token) {
+  return new Promise((resolve, reject) => {
+    const req = https.request("https://api.anthropic.com/api/oauth/usage", {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "anthropic-beta": "oauth-2025-04-20",
+        "anthropic-version": "2023-06-01",
+        "User-Agent": UA,
+      },
+    }, (res) => {
+      let body = "";
+      res.on("data", (d) => (body += d));
+      res.on("end", () => {
+        if (res.statusCode === 401 || res.statusCode === 403)
+          return reject(new Error("unauthorized"));
+        if (res.statusCode !== 200)
+          return reject(new Error(`http ${res.statusCode}`));
+        try { resolve(JSON.parse(body)); }
+        catch { reject(new Error("bad json")); }
+      });
+    });
+    req.on("error", reject);
+    req.setTimeout(8000, () => req.destroy(new Error("timeout")));
+    req.end();
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * 3. Which model + effort you're actually on (local, read-only)      *
+ * ------------------------------------------------------------------ */
+async function currentModelId() {
+  const root = path.join(HOME, ".claude", "projects");
+  if (!existsSync(root)) return null;
+  const files = await newestTranscripts(root, 6);
+  let bestTs = "", bestModel = null;
+  for (const f of files) {
+    const hit = await latestModelIn(f);
+    if (hit && hit.ts > bestTs) { bestTs = hit.ts; bestModel = hit.model; }
+  }
+  return bestModel;
+}
+
+async function newestTranscripts(root, limit) {
+  const found = [];
+  async function walk(dir) {
+    let entries;
+    try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const fp = path.join(dir, e.name);
+      if (e.isDirectory()) await walk(fp);
+      else if (e.name.endsWith(".jsonl")) {
+        try { found.push({ fp, mtime: (await stat(fp)).mtimeMs }); } catch { /* skip */ }
+      }
+    }
+  }
+  await walk(root);
+  return found.sort((a, b) => b.mtime - a.mtime).slice(0, limit).map((x) => x.fp);
+}
+
+// Scan the tail of a transcript for the most recent real assistant model.
+async function latestModelIn(fp) {
+  let fh;
+  try { fh = await open(fp, "r"); } catch { return null; }
+  try {
+    const { size } = await fh.stat();
+    const window = 262_144;
+    const start = size > window ? size - window : 0;
+    const buf = Buffer.alloc(size - start);
+    await fh.read(buf, 0, buf.length, start);
+    const lines = buf.toString("utf8").split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      let obj; try { obj = JSON.parse(line); } catch { continue; }
+      if (obj.isSidechain === true) continue;            // subagent message
+      const model = obj?.message?.model;
+      if (!model || model.startsWith("<")) continue;      // skip <synthetic>
+      return { ts: obj.timestamp || "", model };
+    }
+  } finally { await fh.close(); }
+  return null;
+}
+
+async function currentEffort() {
+  for (const name of [".claude/settings.local.json", ".claude/settings.json"]) {
+    const fp = path.join(HOME, name);
+    if (!existsSync(fp)) continue;
+    try {
+      const o = JSON.parse(await readFile(fp, "utf8"));
+      if (o.effortLevel) return prettyEffort(o.effortLevel);
+    } catch { /* next */ }
+  }
+  return null;
+}
+
+/* "claude-opus-4-8"        -> "Opus 4.8"
+   "claude-haiku-4-5-...."  -> "Haiku 4.5"
+   "claude-opus-4-8[1m]"    -> "Opus 4.8 · 1M"                          */
+function prettyModel(id) {
+  if (!id) return null;
+  let base = id, suffix = "";
+  const open = base.indexOf("["), close = base.indexOf("]");
+  if (open >= 0 && close > open) { suffix = base.slice(open + 1, close); base = base.slice(0, open); }
+  if (base.startsWith("claude-")) base = base.slice(7);
+  const parts = base.split("-");
+  const family = parts.shift() || base;
+  const familyName = family.charAt(0).toUpperCase() + family.slice(1);
+  const version = [];
+  for (const p of parts) { if (/^\d{1,2}$/.test(p)) version.push(p); else break; }
+  let name = version.length ? `${familyName} ${version.join(".")}` : familyName;
+  if (suffix) name += ` · ${suffix.toUpperCase()}`;
+  return name;
+}
+
+function prettyEffort(raw) {
+  const m = { low: "Low", medium: "Medium", high: "High", xhigh: "xHigh", max: "Max" };
+  return m[String(raw).toLowerCase()] || (raw.charAt(0).toUpperCase() + raw.slice(1));
+}
+
+/* ------------------------------------------------------------------ *
+ * 4. Detect other CLIs (scaffold — Claude is the live feed today)    *
+ * ------------------------------------------------------------------ */
+function detect(rel) { return rel.some((r) => existsSync(path.join(HOME, r))); }
+const providerLinks = {
+  codex: () => detect([".codex/auth.json"]),
+  gemini: () => detect([".gemini/oauth_creds.json"]),
+};
+
+/* ------------------------------------------------------------------ *
+ * 5. Assemble the payload the device polls                           *
+ * ------------------------------------------------------------------ */
+function num(x) { return typeof x === "number" ? Math.round(x) : null; }
+
+// Seconds until an ISO reset time — so the device can count down locally
+// without NTP or ISO parsing.
+function secsUntil(iso) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? null : Math.max(0, Math.round((t - Date.now()) / 1000));
+}
+function win(w) {
+  return { util: num(w.utilization), resets_at: w.resets_at ?? null, reset_in: secsUntil(w.resets_at) };
+}
+
+async function buildPayload() {
+  const providers = {
+    claude: { name: "Claude", linked: false, model: null, effort: null, five_hour: null, seven_day: null },
+    codex: { name: "Codex", linked: providerLinks.codex(), model: null, effort: null, five_hour: null, seven_day: null },
+    gemini: { name: "Gemini", linked: providerLinks.gemini(), model: null, effort: null, five_hour: null, seven_day: null },
+  };
+
+  const token = await readClaudeToken();
+  if (token) {
+    providers.claude.linked = true;
+    try {
+      const [usage, modelId, effort] = await Promise.all([
+        fetchUsage(token), currentModelId(), currentEffort(),
+      ]);
+      providers.claude.model = prettyModel(modelId);
+      providers.claude.effort = effort;
+      providers.claude.five_hour = usage.five_hour ? win(usage.five_hour) : null;
+      providers.claude.seven_day = usage.seven_day ? win(usage.seven_day) : null;
+    } catch (e) {
+      providers.claude.error = e.message;   // e.g. "unauthorized" -> open Claude Code
+    }
+  }
+
+  return { ok: true, updated: new Date().toISOString(), providers };
+}
+
+/* ------------------------------------------------------------------ *
+ * 6. HTTP server                                                     *
+ * ------------------------------------------------------------------ */
+let cache = { at: 0, body: null };
+const TTL = 20_000;   // don't hammer Anthropic; the device may poll faster
+
+const server = http.createServer(async (req, res) => {
+  const url = (req.url || "/").split("?")[0];
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Cache-Control", "no-store");
+
+  if (url === "/" || url === "/health") {
+    return send(res, 200, { ok: true, service: "ai-usage-bridge", endpoint: "/usage" });
+  }
+  if (url !== "/usage") return send(res, 404, { ok: false, error: "not found" });
+
+  try {
+    const now = Date.now();
+    if (!cache.body || now - cache.at > TTL) {
+      cache = { at: now, body: await buildPayload() };
+    }
+    send(res, 200, cache.body);
+  } catch (e) {
+    send(res, 500, { ok: false, error: e.message });
+  }
+});
+
+function send(res, code, obj) {
+  const body = JSON.stringify(obj);
+  res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(body);
+}
+
+server.listen(PORT, HOST, () => {
+  const ips = Object.values(os.networkInterfaces()).flat()
+    .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i.address);
+  console.log(`AI Usage Bridge → http://${ips[0] || "localhost"}:${PORT}/usage`);
+  console.log(`  point the ESP32 at this address (LAN only).`);
+  if (!ips.length) console.log("  (no LAN IPv4 found — check your network)");
+});
