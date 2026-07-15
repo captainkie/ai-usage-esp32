@@ -45,8 +45,10 @@ Self-hosted: your token never leaves your Mac.
   colour and its mood follows your busiest gauge: chill 😎 → focus → sweat 😰 →
   stress → fried 🔥 (T-800's eye even dies at 99%).
 
-This is the hardware sibling of **[AI Usage Bar](https://github.com/captainkie/ai-usage-bar)**
-(the macOS menu-bar app) — same idea, same privacy stance, now sitting on your desk.
+> 🖥️ **Prefer it in your menu bar?** This is the desk-display sibling of
+> **[AI Usage Bar for macOS](https://github.com/captainkie/ai-usage-bar)** — same data,
+> same privacy stance. **Run both:** the menu-bar app while you work, this little
+> screen glowing on your desk. They even share the exact same usage feed.
 
 ## How it works
 
