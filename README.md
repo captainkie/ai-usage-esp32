@@ -104,9 +104,13 @@ verified on a host to match the web preview:
 
 ![companions across the five moods](design/previews/mascot-moods.png)
 
-**Want to see it move first?** Open `design/mockup.html` — an interactive,
-pixel-accurate simulation of the 640×172 screen (slider to scrub usage, tap to
-switch companion/provider). Append `?gallery` to see every character at once.
+**Want to see it move first?** ▶ **[Try the live demo →](https://captainkie.github.io/ai-usage-esp32/design/mockup.html)**
+— an interactive, pixel-accurate simulation of the 640×172 screen, right in your browser.
+**Swipe** (or use ← →) between the three screens — `AI Usage`, `Mac Monitor`, and
+`Mac Remote` — scrub the usage / CPU / RAM sliders, and tap the remote buttons.
+*(Monitor + Remote are the in-development screens; the shipped firmware currently renders
+`AI Usage`.)* You can also open `design/mockup.html` locally, or append `?gallery` to see
+every companion at once.
 
 ## Hardware
 
