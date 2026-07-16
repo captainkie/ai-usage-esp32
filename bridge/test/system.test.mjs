@@ -35,6 +35,11 @@ test("parseDf reads the / data line", () => {
   assert.equal(d.used_gb, 362.4);          // 380000000 KiB / 1024^2
 });
 
+test("parseDf returns null on empty or header-only output (graceful)", () => {
+  assert.equal(parseDf(""), null);
+  assert.equal(parseDf("Filesystem 1024-blocks Used Available Capacity Mounted on"), null);
+});
+
 test("parseNetstat sums the first en0 row bytes", () => {
   const ns = [
     "Name  Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll",
@@ -63,5 +68,14 @@ test("parseTop returns the top N by cpu, basename only", () => {
     { name: "Google Chrome", cpu: 42 },
     { name: "node", cpu: 21 },
     { name: "Xcode", cpu: 14 },
+  ]);
+});
+
+test("parseTop keeps reverse-DNS names (no '.app' collapse to 'com')", () => {
+  // real `ps -Aceo pcpu,comm` emits bare comm names like these
+  const ps = " %CPU COMM\n 30.0 com.apple.WebKit.WebContent\n 12.0 com.apple.Virtualization.VirtualMachine";
+  assert.deepEqual(parseTop(ps, 2), [
+    { name: "com.apple.WebKit.WebContent", cpu: 30 },
+    { name: "com.apple.Virtualization.VirtualMachine", cpu: 12 },
   ]);
 });

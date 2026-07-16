@@ -266,14 +266,18 @@ const server = http.createServer(async (req, res) => {
   if (url === "/action") {
     if (!REMOTE_ENABLED) return send(res, 403, { ok: false, error: "remote disabled" });
     if (req.method !== "POST") return send(res, 405, { ok: false, error: "POST only" });
-    let raw = ""; req.on("data", (d) => (raw += d));
+    let raw = "", done = false;
+    const reply = (code, obj) => { if (!done) { done = true; send(res, code, obj); } };
+    req.on("error", () => reply(400, { ok: false, error: "bad request" }));
+    req.on("data", (d) => { raw += d; if (raw.length > 8192) { reply(413, { ok: false, error: "too large" }); req.destroy(); } });
     req.on("end", () => {
-      let body; try { body = JSON.parse(raw || "{}"); } catch { return send(res, 400, { ok: false, error: "bad json" }); }
-      if (!tokensMatch(body.token || "", PAIR_TOKEN)) return send(res, 401, { ok: false, error: "unauthorized" });
+      if (done) return;
+      let body; try { body = JSON.parse(raw || "{}"); } catch { return reply(400, { ok: false, error: "bad json" }); }
+      if (!tokensMatch(body.token || "", PAIR_TOKEN)) return reply(401, { ok: false, error: "unauthorized" });
       const v = validateAction(body, loadActionsConfig(ACTIONS_PATH));
-      if (!v.ok) return send(res, 400, v);
+      if (!v.ok) return reply(400, v);
       execFile(v.cmd.file, v.cmd.args, { timeout: 5000 }, (e) =>
-        e ? send(res, 500, { ok: false, error: e.message }) : send(res, 200, { ok: true }));
+        e ? reply(500, { ok: false, error: "action failed" }) : reply(200, { ok: true }));
     });
     return;
   }
