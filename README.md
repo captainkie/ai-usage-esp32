@@ -10,6 +10,9 @@ limits as twin arc gauges, the model + effort you're on, and a live reset
 countdown — plus a switchable **pixel companion** (🐱 🤖 🐺 🦉 💀 🏃 🦖) that
 changes colour per provider and mood by usage.
 
+And it's growing into a tiny **Mac desk dashboard**: swipe past the usage screen to a live
+**system monitor** (CPU · RAM · Disk) and a **Mac remote** *(both in development)*.
+
 Self-hosted: your token never leaves your Mac.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -44,6 +47,19 @@ Self-hosted: your token never leaves your Mac.
 - **A companion with feelings** — its fur/shell follows the active provider's
   colour and its mood follows your busiest gauge: chill 😎 → focus → sweat 😰 →
   stress → fried 🔥 (T-800's eye even dies at 99%).
+
+### More than a usage bar — a Mac desk dashboard *(in development)*
+
+Swipe between three screens, all in the same 640×172 gauge language:
+
+- **① AI Usage** — the twin gauges above *(shipped)*.
+- **② Mac Monitor** — live **CPU · RAM · Disk** meters, plus network I/O, battery,
+  temperature, and the top resource-hungry processes.
+- **③ Mac Remote** — one-tap **shortcuts** (open YouTube / apps), **media** transport,
+  **volume**, and **lock / sleep** — the device drives your Mac through the bridge
+  (allowlisted + paired, never a free-for-all).
+
+▶ **[Play with all three in the live demo →](https://captainkie.github.io/ai-usage-esp32/design/mockup.html)** — swipe, scrub the meters, tap the remote.
 
 > 🖥️ **Prefer it in your menu bar?** This is the desk-display sibling of
 > **[AI Usage Bar for macOS](https://github.com/captainkie/ai-usage-bar)** — same data,
@@ -104,13 +120,9 @@ verified on a host to match the web preview:
 
 ![companions across the five moods](design/previews/mascot-moods.png)
 
-**Want to see it move first?** ▶ **[Try the live demo →](https://captainkie.github.io/ai-usage-esp32/design/mockup.html)**
-— an interactive, pixel-accurate simulation of the 640×172 screen, right in your browser.
-**Swipe** (or use ← →) between the three screens — `AI Usage`, `Mac Monitor`, and
-`Mac Remote` — scrub the usage / CPU / RAM sliders, and tap the remote buttons.
-*(Monitor + Remote are the in-development screens; the shipped firmware currently renders
-`AI Usage`.)* You can also open `design/mockup.html` locally, or append `?gallery` to see
-every companion at once.
+**Want to see it move first?** ▶ **[Open the live demo →](https://captainkie.github.io/ai-usage-esp32/design/mockup.html)**
+or `design/mockup.html` locally — an interactive, pixel-accurate simulation of the 640×172
+screen. Append `?gallery` to see every companion at once.
 
 ## Hardware
 
