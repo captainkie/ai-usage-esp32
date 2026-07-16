@@ -5,7 +5,8 @@
   "type": "module",
   "bin": { "ai-usage-bridge": "./ai-usage-bridge.mjs" },
   "scripts": {
-    "start": "node ai-usage-bridge.mjs"
+    "start": "node ai-usage-bridge.mjs",
+    "test": "node --test"
   },
   "engines": { "node": ">=18" },
   "license": "MIT"

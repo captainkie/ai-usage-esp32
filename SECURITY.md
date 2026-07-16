@@ -22,7 +22,31 @@ and a model name, as JSON, over your LAN.
   to show the current model + effort.
 - Makes one outbound HTTPS call to `api.anthropic.com` with your token.
 - Serves `GET /usage` (JSON) on your LAN. **This endpoint is unauthenticated**
-  but contains **no token** — only percentages, reset times, and a model name.
+  but contains **no token** — only percentages, reset times, a model name, and
+  read-only system stats (cpu/mem/disk/net/battery + top process names).
+- Serves `POST /action` (remote control) — see the command surface below.
+
+## Remote command surface (`POST /action`)
+
+The Remote screen can ask the Mac to run a **small, fixed set** of local
+actions. It is locked down on every axis:
+
+- **Token-gated.** Every request must carry the pairing token (a 128-bit random
+  value, stored `0600` at `~/.config/ai-usage-bridge/pairing.json`, compared in
+  constant time). No token → `401`, and the action is never evaluated or run.
+- **Allowlisted, not arbitrary.** Only `open_url`, `open_app`, `shortcut`,
+  `media`, `volume`, `lock`, `display_sleep` are accepted; anything else → `400`.
+  There is **no** "run this shell command" action.
+- **`open_url` is https-only.** `http://` and `file://` are rejected `400`.
+- **App / shortcut names are config-restricted.** `open_app` and `shortcut` only
+  run names present in *your* `actions.json`; unknown names → `400`. The remote
+  cannot launch software you did not list.
+- **Kill switch.** Start with `REMOTE=0` to disable `/action` entirely (`403`)
+  and skip token creation — dashboard/Monitor still work.
+- **No password, ever.** The bridge never handles your login/keychain password;
+  `lock`/`display_sleep` use macOS' own mechanisms.
+- **Future USB transport** (separate plan) removes LAN exposure altogether by
+  carrying the same commands over a wired serial link instead of HTTP.
 
 **Firmware (`firmware/`)**
 - Connects to your Wi-Fi and polls `http://<mac>:<port>/usage`.

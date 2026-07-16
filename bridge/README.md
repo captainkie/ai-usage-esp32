@@ -52,6 +52,62 @@ address during Wi-Fi setup.
   live usage wired yet — `five_hour`/`seven_day` stay `null`. The firmware shows
   them as selectable with a "no live data" state.
 
+## Live system stats — the `system` block
+
+`GET /usage` also carries a `system` block, read locally from macOS CLIs
+(`top`, `vm_stat`, `sysctl`, `df`, `netstat`, `pmset`, `ps`) — this powers the
+**Monitor** screen on the device:
+
+```json
+"system": {
+  "cpu":     { "util": 26 },
+  "mem":     { "util": 48, "used_gb": 7.6, "total_gb": 16 },
+  "disk":    { "util": 74, "used_gb": 362.4, "total_gb": 926.4, "mount": "/" },
+  "net":     { "down_kbps": 1000, "up_kbps": 100 },
+  "battery": { "percent": 82, "charging": false },
+  "top":     [ { "name": "Google Chrome", "cpu": 42 }, { "name": "node", "cpu": 21 } ]
+}
+```
+
+Everything here is read-only and stays on your LAN — nothing new leaves the Mac.
+
+## Remote control — `POST /action`
+
+The **Remote** screen sends allowlisted, token-authenticated commands the Mac
+runs locally. Send JSON to `POST /usage`'s sibling, `POST /action`:
+
+```sh
+curl -XPOST http://<mac>:8787/action \
+  -d '{"token":"<pairing-token>","action":"open_app","name":"Music"}'
+```
+
+- **Pairing token** — printed once on startup (also stored `0600` at
+  `~/.config/ai-usage-bridge/pairing.json`). Enter it on the device to pair.
+  Every `/action` request must carry the matching `token` or it is rejected
+  `401 unauthorized` (constant-time compare).
+- **Allowlist** — only these actions are accepted; anything else is `400`:
+
+  | `action`        | params            | runs                                    |
+  |-----------------|-------------------|-----------------------------------------|
+  | `open_url`      | `url` (**https**) | opens the URL in Safari (http/file → `400 https only`) |
+  | `open_app`      | `name`            | `open -a <name>` — **name must be in `actions.json` → `apps`** |
+  | `shortcut`      | `name`            | `shortcuts run <name>` — **name must be in `actions.json` → `shortcuts`** |
+  | `media`         | `key`             | `playpause` / `next` / `prev` (Music)   |
+  | `volume`        | `dir`             | `up` / `down` / `mute`                  |
+  | `lock`          | –                 | locks the screen                        |
+  | `display_sleep` | –                 | sleeps the display                      |
+
+- **`actions.json`** — your allowlist of apps / shortcut names / URL labels.
+  Copy the sample to start: `cp actions.example.json ~/.config/ai-usage-bridge/actions.json`
+  (override the path with `ACTIONS=/path/to/actions.json`). App and shortcut
+  names not in this file are refused, so the remote can never launch arbitrary
+  software.
+- **Disable remote entirely** — start with `REMOTE=0`; `/action` then returns
+  `403` and no pairing token is created. Dashboard/Monitor still work.
+- **Discovery** — on startup the bridge advertises `_aiusage._tcp` over mDNS
+  (Bonjour) so the device can find it without typing an IP. Best-effort; a typed
+  IP always works too.
+
 ## How it reads your login
 
 - **macOS:** `security find-generic-password -w -s "Claude Code-credentials"` —

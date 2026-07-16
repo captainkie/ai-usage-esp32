@@ -19,10 +19,22 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { readSystem } from "./lib/system.mjs";
+import { loadOrCreateToken, tokensMatch } from "./lib/pairing.mjs";
+import { loadActionsConfig, validateAction } from "./lib/actions.mjs";
+import { advertise } from "./lib/mdns.mjs";
+// note: execFile is already imported from "node:child_process" above.
+
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || "0.0.0.0";
 const HOME = os.homedir();
 const UA = "AIUsageBridge/1.0 (self-hosted)";
+
+const REMOTE_ENABLED = process.env.REMOTE !== "0";           // remote on unless REMOTE=0
+const PAIR_PATH = path.join(HOME, ".config", "ai-usage-bridge", "pairing.json");
+const ACTIONS_PATH = process.env.ACTIONS || path.join(HOME, ".config", "ai-usage-bridge", "actions.json");
+const PAIR_TOKEN = REMOTE_ENABLED ? loadOrCreateToken(PAIR_PATH) : null;
+let prevNet = null;
 
 /* ------------------------------------------------------------------ *
  * 1. Read Claude Code's OAuth credentials (no Keychain prompt on mac) *
@@ -235,7 +247,9 @@ async function buildPayload() {
     }
   }
 
-  return { ok: true, updated: new Date().toISOString(), providers };
+  let system = null;
+  try { const s = await readSystem(prevNet); system = s.system; prevNet = s.net; } catch { /* keep null */ }
+  return { ok: true, updated: new Date().toISOString(), providers, system };
 }
 
 /* ------------------------------------------------------------------ *
@@ -248,6 +262,25 @@ const server = http.createServer(async (req, res) => {
   const url = (req.url || "/").split("?")[0];
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "no-store");
+
+  if (url === "/action") {
+    if (!REMOTE_ENABLED) return send(res, 403, { ok: false, error: "remote disabled" });
+    if (req.method !== "POST") return send(res, 405, { ok: false, error: "POST only" });
+    let raw = "", done = false;
+    const reply = (code, obj) => { if (!done) { done = true; send(res, code, obj); } };
+    req.on("error", () => reply(400, { ok: false, error: "bad request" }));
+    req.on("data", (d) => { raw += d; if (raw.length > 8192) { reply(413, { ok: false, error: "too large" }); req.destroy(); } });
+    req.on("end", () => {
+      if (done) return;
+      let body; try { body = JSON.parse(raw || "{}"); } catch { return reply(400, { ok: false, error: "bad json" }); }
+      if (!tokensMatch(body.token || "", PAIR_TOKEN)) return reply(401, { ok: false, error: "unauthorized" });
+      const v = validateAction(body, loadActionsConfig(ACTIONS_PATH));
+      if (!v.ok) return reply(400, v);
+      execFile(v.cmd.file, v.cmd.args, { timeout: 5000 }, (e) =>
+        e ? reply(500, { ok: false, error: "action failed" }) : reply(200, { ok: true }));
+    });
+    return;
+  }
 
   if (url === "/" || url === "/health") {
     return send(res, 200, { ok: true, service: "ai-usage-bridge", endpoint: "/usage" });
@@ -277,4 +310,11 @@ server.listen(PORT, HOST, () => {
   console.log(`AI Usage Bridge → http://${ips[0] || "localhost"}:${PORT}/usage`);
   console.log(`  point the ESP32 at this address (LAN only).`);
   if (!ips.length) console.log("  (no LAN IPv4 found — check your network)");
+    if (REMOTE_ENABLED) {
+      advertise(PORT);
+      console.log(`  remote: enabled — pairing token ${PAIR_TOKEN} (enter this on the device)`);
+      console.log(`  shortcuts config: ${ACTIONS_PATH} (copy actions.example.json to start)`);
+    } else {
+      console.log("  remote: disabled (REMOTE=0) — dashboard only");
+    }
 });
