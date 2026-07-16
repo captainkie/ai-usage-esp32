@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Keep GitHub Actions (checkout, setup-node, codeql) current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+
+  # The bridge is intentionally zero-dependency today; this future-proofs it
+  # (and flags any dependency that sneaks in) without changing that stance.
+  - package-ecosystem: npm
+    directory: /bridge
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps

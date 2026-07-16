@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  bridge-tests:
+    name: bridge-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      # The bridge is zero-dependency; tests are pure fixture-based parsers/validators,
+      # so they run anywhere (no macOS CLIs invoked).
+      - name: node --test
+        working-directory: bridge
+        run: node --test
