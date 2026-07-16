@@ -11,18 +11,22 @@
 static Preferences        g_prefs;
 static String             g_host = "";
 static String             g_port = String(DEFAULT_BRIDGE_PORT);
+static String             g_token = "";        // pairing token (from the Mac bridge)
 static char               g_bridge_desc[48] = "(not set)";
 static WiFiManagerParameter *g_pHost = nullptr;
 static WiFiManagerParameter *g_pPort = nullptr;
+static WiFiManagerParameter *g_pTok  = nullptr;
 
 static void net_save_params() {
-  if (g_pHost) g_host = g_pHost->getValue();
-  if (g_pPort) g_port = g_pPort->getValue();
-  g_host.trim(); g_port.trim();
+  if (g_pHost) g_host  = g_pHost->getValue();
+  if (g_pPort) g_port  = g_pPort->getValue();
+  if (g_pTok)  g_token = g_pTok->getValue();
+  g_host.trim(); g_port.trim(); g_token.trim();
   if (g_port.length() == 0) g_port = String(DEFAULT_BRIDGE_PORT);
   g_prefs.begin("aiusage", false);
   g_prefs.putString("host", g_host);
   g_prefs.putString("port", g_port);
+  g_prefs.putString("token", g_token);
   g_prefs.end();
   snprintf(g_bridge_desc, sizeof(g_bridge_desc), "%s:%s", g_host.c_str(), g_port.c_str());
 }
@@ -32,17 +36,20 @@ static void net_save_params() {
 // types the Mac's IP + port. Blocks until connected.
 static void net_begin() {
   g_prefs.begin("aiusage", true);
-  g_host = g_prefs.getString("host", "");
-  g_port = g_prefs.getString("port", String(DEFAULT_BRIDGE_PORT));
+  g_host  = g_prefs.getString("host", "");
+  g_port  = g_prefs.getString("port", String(DEFAULT_BRIDGE_PORT));
+  g_token = g_prefs.getString("token", "");
   g_prefs.end();
 
   WiFiManager wm;
   wm.setConfigPortalTimeout(WM_AP_TIMEOUT_S);
   static WiFiManagerParameter pHost("host", "Mac bridge IP (e.g. 192.168.1.20)", g_host.c_str(), 24);
   static WiFiManagerParameter pPort("port", "Bridge port", g_port.c_str(), 6);
-  g_pHost = &pHost; g_pPort = &pPort;
+  static WiFiManagerParameter pTok("token", "Pairing token (from the Mac bridge)", g_token.c_str(), 40);
+  g_pHost = &pHost; g_pPort = &pPort; g_pTok = &pTok;
   wm.addParameter(&pHost);
   wm.addParameter(&pPort);
+  wm.addParameter(&pTok);
   wm.setSaveParamsCallback(net_save_params);
 
   // Force the portal the first time (no bridge IP yet); otherwise auto-connect.
@@ -57,8 +64,9 @@ static void net_portal() {
   WiFiManager wm;
   static WiFiManagerParameter pHost("host", "Mac bridge IP", g_host.c_str(), 24);
   static WiFiManagerParameter pPort("port", "Bridge port", g_port.c_str(), 6);
-  g_pHost = &pHost; g_pPort = &pPort;
-  wm.addParameter(&pHost); wm.addParameter(&pPort);
+  static WiFiManagerParameter pTok("token", "Pairing token (from the Mac bridge)", g_token.c_str(), 40);
+  g_pHost = &pHost; g_pPort = &pPort; g_pTok = &pTok;
+  wm.addParameter(&pHost); wm.addParameter(&pPort); wm.addParameter(&pTok);
   wm.setSaveParamsCallback(net_save_params);
   wm.startConfigPortal(WM_AP_NAME);
 }
@@ -88,7 +96,8 @@ static bool net_fetch(UsageState *out) {
   String body = http.getString();
   http.end();
 
-  DynamicJsonDocument doc(8192);
+  // 16384: providers + the `system` block (cpu/mem/disk/net/battery + top[3]).
+  DynamicJsonDocument doc(16384);
   if (deserializeJson(doc, body)) { strcpy(out->err, "json"); return false; }
 
   JsonObjectConst provs = doc["providers"];
@@ -102,8 +111,55 @@ static bool net_fetch(UsageState *out) {
     parse_window(pr["five_hour"], &ps->five);
     parse_window(pr["seven_day"], &ps->seven);
   }
+
+  // ---- Mac system stats (screen ②). Absent block => sys.ok stays false. ----
+  JsonObjectConst sysj = doc["system"];
+  SystemState *s = &out->sys;
+  memset(s, 0, sizeof(*s));
+  if (!sysj.isNull()) {
+    s->ok = true;
+    s->cpu          = sysj["cpu"]["util"] | -1;
+    s->mem_util     = sysj["mem"]["util"] | -1;
+    s->mem_used_gb  = sysj["mem"]["used_gb"]  | 0.0f;
+    s->mem_total_gb = sysj["mem"]["total_gb"] | 0.0f;
+    s->disk_util    = sysj["disk"]["util"] | -1;
+    s->disk_used_gb  = sysj["disk"]["used_gb"]  | 0;
+    s->disk_total_gb = sysj["disk"]["total_gb"] | 0;
+    s->net_down_kbps = sysj["net"]["down_kbps"] | 0;
+    s->net_up_kbps   = sysj["net"]["up_kbps"]   | 0;
+    s->batt   = sysj["battery"].isNull() ? -1 : (sysj["battery"]["percent"] | -1);
+    s->temp_c = sysj["temp_c"] | -1;
+    int i = 0;
+    for (JsonObjectConst t : sysj["top"].as<JsonArrayConst>()) {
+      if (i >= 3) break;
+      strlcpy(s->top[i].name, t["name"] | "", sizeof(s->top[i].name));
+      s->top[i].cpu = t["cpu"] | 0;
+      i++;
+    }
+    s->top_n = i;
+  }
+
   out->ok = true;
   out->stamp_ms = millis();
   out->err[0] = 0;
   return true;
+}
+
+// POST one allowlisted action to /action with the pairing token injected.
+// `body` is one of ACTION_BODY[] (config.h). Returns true on HTTP 200 {ok:true}.
+// MUST be called from the network task (loop()), never inside an LVGL callback.
+static bool net_action(const char *body) {
+  if (WiFi.status() != WL_CONNECTED || g_host.length() == 0) return false;
+  if (g_token.length() == 0) return false;                      // not paired yet
+  // Splice the token into the body: {"token":"...",<body without leading '{'>
+  String payload = String("{\"token\":\"") + g_token + "\"," + (body + 1);
+  String url = "http://" + g_host + ":" + g_port + "/action";
+  HTTPClient http;
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  if (!http.begin(url)) return false;
+  http.addHeader("Content-Type", "application/json");
+  int code = http.POST(payload);
+  http.end();
+  return code == 200;
 }
