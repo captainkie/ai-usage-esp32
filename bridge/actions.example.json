@@ -1,0 +1,5 @@
+{
+  "urls":      { "YouTube": "https://youtube.com" },
+  "apps":      { "Music": "Music", "Safari": "Safari" },
+  "shortcuts": { "Focus": "Focus" }
+}
