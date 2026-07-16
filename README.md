@@ -59,6 +59,14 @@ Swipe between three screens, all in the same 640×172 gauge language:
   **volume**, and **lock / sleep** — the device drives your Mac through the bridge
   (allowlisted + paired, never a free-for-all).
 
+<img src="design/previews/screen-monitor.png" width="640" alt="Mac Monitor screen — CPU 34% green, RAM 66% amber, Disk 88% red arc gauges, with a network / battery / temperature / top-process ticker" />
+
+<sub>**② Mac Monitor** — CPU · RAM · Disk as traffic-light arcs, plus network I/O, battery, temperature, and the top process.</sub>
+
+<img src="design/previews/screen-remote.png" width="640" alt="Mac Remote screen — YouTube / Music / Safari / Focus shortcut tiles, media transport, volume bar, and lock / sleep buttons" />
+
+<sub>**③ Mac Remote** — shortcuts (open YouTube / apps), media transport, volume, and lock / sleep — driven over the bridge.</sub>
+
 ▶ **[Play with all three in the live demo →](https://captainkie.github.io/ai-usage-esp32/design/mockup.html)** — swipe, scrub the meters, tap the remote.
 
 > 🖥️ **Prefer it in your menu bar?** This is the desk-display sibling of
