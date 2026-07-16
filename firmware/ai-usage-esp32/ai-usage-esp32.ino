@@ -131,6 +131,7 @@ static void remote_cb(lv_event_t *e) {
 // The tileview scrolled to a new screen: light the matching page dot + reveal.
 static void tile_changed_cb(lv_event_t *e) {
   (void)e;
+  if (!dotsBox) return;               // tiles/dots not built yet — ignore any early event
   lv_obj_t *act = lv_tileview_get_tile_act(g_tv);
   for (int i = 0; i < 3; i++)
     lv_obj_set_style_bg_color(dot[i], LVC(act == tile[i] ? COL_INK : 0x4A4F60), 0);
@@ -449,6 +450,7 @@ static void ui_build() {
   lv_obj_set_size(g_tv, SCREEN_W, SCREEN_H);
   lv_obj_set_style_bg_opa(g_tv, LV_OPA_TRANSP, 0);
   lv_obj_set_scrollbar_mode(g_tv, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_set_style_pad_all(g_tv, 0, 0);          // no padding: children keep the mockup's coords
   lv_obj_add_event_cb(g_tv, tile_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
   // three horizontal tiles (col 0/1/2, row 0), swipe left/right between them
@@ -459,6 +461,7 @@ static void ui_build() {
     lv_obj_set_style_bg_color(tile[i], LVC(COL_BG), 0);
     lv_obj_set_style_bg_opa(tile[i], LV_OPA_COVER, 0);
     lv_obj_set_scrollbar_mode(tile[i], LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_pad_all(tile[i], 0, 0);     // children position from (0,0), per the mockup
   }
 
   screen_usage_build(tile[0]);      // ① unchanged (same coords, same events)
