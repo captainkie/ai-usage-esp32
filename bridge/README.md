@@ -20,11 +20,14 @@ PORT=9000 node ai-usage-bridge.mjs
 Auto-start at login (macOS):
 
 ```sh
-./install-macos.sh 8787
+./install-macos.sh 8787            # scaffolds actions.json + prints your pairing token
+REMOTE=0 ./install-macos.sh 8787   # dashboard only (no remote command endpoint)
 ```
 
 Then open `http://<your-mac-ip>:8787/usage` — you'll point the ESP32 at that
-address during Wi-Fi setup.
+address during Wi-Fi setup. With the remote enabled (default), the installer
+also creates `~/.config/ai-usage-bridge/actions.json` from the sample and prints
+the **pairing token** to enter on the device.
 
 ## What it exposes — `GET /usage`
 
@@ -98,7 +101,8 @@ curl -XPOST http://<mac>:8787/action \
   | `display_sleep` | –                 | sleeps the display                      |
 
 - **`actions.json`** — your allowlist of apps / shortcut names / URL labels.
-  Copy the sample to start: `cp actions.example.json ~/.config/ai-usage-bridge/actions.json`
+  `./install-macos.sh` creates it for you (from `actions.example.json`); to do it
+  by hand: `cp actions.example.json ~/.config/ai-usage-bridge/actions.json`
   (override the path with `ACTIONS=/path/to/actions.json`). App and shortcut
   names not in this file are refused, so the remote can never launch arbitrary
   software.
