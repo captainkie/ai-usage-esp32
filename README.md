@@ -146,8 +146,13 @@ tiles are configurable. Two tiles need a little extra macOS setup:
 the setup portal — change Wi-Fi or update the token, no reflashing needed.
 
 The ESP32 can't join **WPA2-Enterprise** or captive-portal corporate Wi-Fi. On a
-restrictive office network, use a **phone hotspot (2.4GHz)** as a fallback (a
-tether-free **USB-serial** transport is coming — see [Roadmap](#roadmap)).
+restrictive office network you have two tether-free options:
+
+- **USB (no network at all):** keep the device plugged into your Mac over USB and
+  run the bridge — it **auto-detects the USB port** and pushes updates over the
+  cable (no Wi-Fi, no pairing). Set `USB=0` to disable, or `USB_PORT=/dev/cu.…` to
+  pin it. Perfect for carrying one device between home and office.
+- **Phone hotspot (2.4GHz):** a Wi-Fi fallback if you'd rather stay wireless.
 
 > If Anthropic's usage endpoint transiently rate-limits (HTTP 429 — it shares your
 > token with the menu-bar app), the bridge serves the **last-known-good** reading,
@@ -178,9 +183,9 @@ Full notes + driver rationale in **[esp32/HARDWARE.md](esp32/HARDWARE.md)**.
 
 ## Roadmap
 
-- **USB-serial transport** *(in progress)* — run tether-free over the USB cable it's
-  already powered by; no Wi-Fi or pairing needed. Ideal for carrying a single device
-  between home and office.
+- **USB-serial transport** *(available)* — runs tether-free over the USB cable it's
+  already powered by; no Wi-Fi or pairing needed. Auto-detected by the bridge — ideal
+  for carrying a single device between home and office.
 - **Bluetooth (BLE) transport** *(planned)* — a wireless, network-free link to the Mac.
 - **On-device AI voice assistant** *(planned)* — the board has a dual-mic array + audio
   codec (ES7210 ADC / ES8311 DAC + speaker header); wake-word or push-to-talk to an LLM.

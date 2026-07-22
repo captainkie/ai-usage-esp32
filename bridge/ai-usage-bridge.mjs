@@ -13,9 +13,9 @@
 
 import http from "node:http";
 import https from "node:https";
-import { execFile } from "node:child_process";
+import { execFile, execSync } from "node:child_process";
 import { readFile, readdir, stat, open } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, openSync, writeSync, closeSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -320,6 +320,52 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+/* ------------------------------------------------------------------ *
+ * 7. USB-serial transport (optional): push /usage frames to the device *
+ *    over the USB cable it's already powered by — works with no Wi-Fi   *
+ *    (e.g. carried to the office). Auto-on when one usbmodem port is     *
+ *    present; set USB=0 to disable, or USB_PORT=/dev/cu.x to pin it.     *
+ * ------------------------------------------------------------------ */
+async function currentPayload() {
+  const now = Date.now();
+  if (!cache.body || now - cache.at > TTL) cache = { at: now, body: await buildPayload() };
+  return cache.body;
+}
+
+function detectUsbPort() {
+  if (process.env.USB === "0") return null;
+  if (process.env.USB_PORT) return process.env.USB_PORT;
+  try {
+    const ports = readdirSync("/dev").filter((f) => f.startsWith("cu.usbmodem")).map((f) => "/dev/" + f);
+    return ports.length === 1 ? ports[0] : null;   // auto only when unambiguous
+  } catch { return null; }
+}
+
+function startUsbWriter() {
+  const port = detectUsbPort();
+  if (!port) return;
+  let fd = null;
+  const openPort = () => {
+    try {
+      execSync(`stty -f ${port} 115200 raw`);        // raw mode (CDC baud is virtual)
+      fd = openSync(port, "w");
+      console.log(`  usb: pushing frames to ${port} (set USB=0 to disable)`);
+    } catch { fd = null; }
+  };
+  openPort();
+  const tick = async () => {
+    try {
+      if (fd === null) { openPort(); if (fd === null) return; }
+      writeSync(fd, JSON.stringify(await currentPayload()) + "\n");
+    } catch {
+      try { if (fd !== null) closeSync(fd); } catch { /* ignore */ }
+      fd = null;   // device may have re-enumerated; reopen next tick
+    }
+  };
+  tick();
+  setInterval(tick, 12_000);
+}
+
 function send(res, code, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
@@ -339,4 +385,5 @@ server.listen(PORT, HOST, () => {
     } else {
       console.log("  remote: disabled (REMOTE=0) — dashboard only");
     }
+    startUsbWriter();
 });

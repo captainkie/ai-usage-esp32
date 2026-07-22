@@ -651,8 +651,10 @@ static void ui_setup_screen() {
 
 /* ---------------- networking task (Arduino core) ---------------- */
 static unsigned long g_lastPoll = 0;
+static unsigned long g_last_usb_ms = 0;   // last USB frame (0 = none)
 
 void setup() {
+  Serial.setRxBufferSize(2048);   // HWCDC default RX is 256B; USB frames are ~1KB
   Serial.begin(115200);
   Serial.println("\n=== AI-USAGE-BAR (3-screen) boot (" __DATE__ " " __TIME__ ") ===");
   i2c_master_Init();
@@ -672,7 +674,20 @@ void setup() {
 }
 
 void loop() {
-  if (g_lastPoll == 0 || millis() - g_lastPoll > POLL_INTERVAL_MS) {
+  // USB-serial transport (preferred when frames arrive): the Mac pushes /usage
+  // frames over the USB cable; they drive the display even with no Wi-Fi (office).
+  UsageState uframe;
+  if (net_usb_read(&uframe)) {
+    portENTER_CRITICAL(&g_mux);
+    g_state = uframe; g_have = true;
+    portEXIT_CRITICAL(&g_mux);
+    g_last_usb_ms = millis();
+    Serial.printf("[usb] frame ok 5h=%d wk=%d\n",
+                  uframe.p[PV_CLAUDE].five.util, uframe.p[PV_CLAUDE].seven.util);
+  }
+  bool usbFresh = g_last_usb_ms != 0 && (millis() - g_last_usb_ms < 30000);
+
+  if (!usbFresh && (g_lastPoll == 0 || millis() - g_lastPoll > POLL_INTERVAL_MS)) {
     g_lastPoll = millis();
     UsageState tmp;
     bool ok = net_fetch(&tmp);
