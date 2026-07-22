@@ -4,7 +4,7 @@
 
 // ---- Wi-Fi provisioning ----
 #define WM_AP_NAME       "AI-Usage-Bar-Setup"   // captive-portal SSID
-#define WM_AP_TIMEOUT_S  180                     // portal timeout before retrying STA
+#define WM_AP_TIMEOUT_S  600                     // portal timeout before retrying STA
 
 // ---- bridge polling ----
 #define POLL_INTERVAL_MS   15000                 // how often to ask the Mac bridge
@@ -52,7 +52,7 @@ typedef struct {
 
 // ---- Mac system stats (mirrors the bridge `system` block; -1/empty = no data) ----
 // NOTE: SystemState must be declared before UsageState because UsageState embeds it.
-typedef struct { char name[20]; int cpu; } TopProc;
+typedef struct { char name[32]; int cpu; } TopProc;
 typedef struct {
   bool ok;                 // system block present this fetch
   int  cpu;                // -1 = n/a

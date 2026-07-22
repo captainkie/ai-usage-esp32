@@ -53,8 +53,11 @@ static void net_begin() {
   wm.setSaveParamsCallback(net_save_params);
 
   // Force the portal the first time (no bridge IP yet); otherwise auto-connect.
-  if (g_host.length() == 0) wm.startConfigPortal(WM_AP_NAME);
-  else                      wm.autoConnect(WM_AP_NAME);
+  if (g_host.length() == 0) {
+    while (g_host.length() == 0) wm.startConfigPortal(WM_AP_NAME);
+  } else {
+    wm.autoConnect(WM_AP_NAME);
+  }
 
   snprintf(g_bridge_desc, sizeof(g_bridge_desc), "%s:%s", g_host.c_str(), g_port.c_str());
 }
@@ -161,5 +164,6 @@ static bool net_action(const char *body) {
   http.addHeader("Content-Type", "application/json");
   int code = http.POST(payload);
   http.end();
+  if (code != 200) Serial.printf("[action] POST -> HTTP %d (token len %d)\n", code, (int)g_token.length());
   return code == 200;
 }

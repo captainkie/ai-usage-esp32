@@ -224,6 +224,14 @@ function win(w) {
   return { util: num(w.utilization), resets_at: w.resets_at ?? null, reset_in: secsUntil(w.resets_at) };
 }
 
+// Last-known-good Claude fields. The Anthropic usage endpoint is rate-limited
+// (429) — and it's shared with the ai-usage-bar menu-bar app on the same token —
+// so a poll can transiently fail. Rather than emit nulls (which blanks the
+// device to "no live data"), we reuse the last real values until a fresh poll
+// succeeds. `lastGoodAt` lets callers reason about staleness if needed.
+let lastGoodClaude = { model: null, effort: null, five_hour: null, seven_day: null };
+let lastGoodAt = 0;
+
 async function buildPayload() {
   const providers = {
     claude: { name: "Claude", linked: false, model: null, effort: null, five_hour: null, seven_day: null },
@@ -247,6 +255,20 @@ async function buildPayload() {
     }
   }
 
+  // Sticky last-known-good: a transient 429/timeout or a momentary gap in model
+  // detection shouldn't blank the device. Reuse the last real values; only
+  // overwrite them when a fresh, non-null value arrives.
+  if (providers.claude.linked) {
+    const c = providers.claude;
+    let fresh = false;
+    for (const k of ["model", "effort", "five_hour", "seven_day"]) {
+      if (c[k] == null) c[k] = lastGoodClaude[k];
+      else { lastGoodClaude[k] = c[k]; fresh = true; }
+    }
+    if (fresh) lastGoodAt = Date.now();
+    if (c.five_hour || c.model) delete c.error;   // we have something real to show
+  }
+
   let system = null;
   try { const s = await readSystem(prevNet); system = s.system; prevNet = s.net; } catch { /* keep null */ }
   return { ok: true, updated: new Date().toISOString(), providers, system };
@@ -256,7 +278,7 @@ async function buildPayload() {
  * 6. HTTP server                                                     *
  * ------------------------------------------------------------------ */
 let cache = { at: 0, body: null };
-const TTL = 20_000;   // don't hammer Anthropic; the device may poll faster
+const TTL = 60_000;   // don't hammer Anthropic (shared token → 429); device may poll faster
 
 const server = http.createServer(async (req, res) => {
   const url = (req.url || "/").split("?")[0];

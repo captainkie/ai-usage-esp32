@@ -1,5 +1,5 @@
 /*
- * AI Usage Bar — ESP32 edition
+ * AI Usage Bar -- ESP32 edition
  * Waveshare ESP32-S3-Touch-LCD-3.49 (640×172, AXS15231B QSPI + capacitive touch)
  *
  * Shows your Claude Code 5-hour / weekly limits as twin arc gauges with a live
@@ -7,7 +7,7 @@
  * a pixel companion (cat / robot / husky / owl / T-800 / runner / dino) whose
  * colour follows the provider and whose mood follows the busiest gauge.
  *
- * Data comes from the Mac "bridge" (../bridge) over your LAN — your token never
+ * Data comes from the Mac "bridge" (../bridge) over your LAN -- your token never
  * leaves the Mac.
  *
  * BUILD: this sketch is a drop-in on top of Waveshare's official
@@ -113,7 +113,7 @@ static const char *ACTION_TOAST[ACT_COUNT] = {
 static void show_toast(int a) {
   if (!lblToast) return;
   if (g_token.length() == 0)
-    lv_label_set_text(lblToast, LV_SYMBOL_WARNING " No pairing token — run Wi-Fi setup");
+    lv_label_set_text(lblToast, LV_SYMBOL_WARNING " No pairing token -- run Wi-Fi setup");
   else
     lv_label_set_text_fmt(lblToast, LV_SYMBOL_OK " %s", ACTION_TOAST[a]);
   lv_obj_clear_flag(lblToast, LV_OBJ_FLAG_HIDDEN);
@@ -121,7 +121,7 @@ static void show_toast(int a) {
 }
 
 // A remote button was tapped: enqueue the action (loop() POSTs it) + confirm.
-// NEVER do network I/O here — that would block the LVGL render task.
+// NEVER do network I/O here -- that would block the LVGL render task.
 static void remote_cb(lv_event_t *e) {
   int a = (int)(intptr_t)lv_event_get_user_data(e);
   g_action = a;                       // net task drains this in loop()
@@ -131,7 +131,7 @@ static void remote_cb(lv_event_t *e) {
 // The tileview scrolled to a new screen: light the matching page dot + reveal.
 static void tile_changed_cb(lv_event_t *e) {
   (void)e;
-  if (!dotsBox) return;               // tiles/dots not built yet — ignore any early event
+  if (!dotsBox) return;               // tiles/dots not built yet -- ignore any early event
   lv_obj_t *act = lv_tileview_get_tile_act(g_tv);
   for (int i = 0; i < 3; i++)
     lv_obj_set_style_bg_color(dot[i], LVC(act == tile[i] ? COL_INK : 0x4A4F60), 0);
@@ -141,12 +141,29 @@ static void tile_changed_cb(lv_event_t *e) {
 
 /* ---------------- shared screen helpers ---------------- */
 // Topbar identical to screen ①: brand (left), centered title, LIVE (right).
+// Shorten a process name for the tiny caption: last component of a reverse-DNS
+// bundle id (com.apple.WebKit.WebContent -> WebContent), capped to fit one line.
+static void short_name(const char *in, char *out, size_t n) {
+  const char *base = in;
+  const char *dot = strrchr(in, '.');
+  if (dot && dot[1]) base = dot + 1;
+  strlcpy(out, base, n);
+  if (strlen(out) > 14) out[14] = '\0';
+}
+
+// Long-press the brand to reopen the Wi-Fi/setup portal (change network / enter
+// pairing token). The LVGL callback only sets a flag; loop() does the blocking work.
+static volatile bool g_reprovision = false;
+static void brand_cb(lv_event_t *e) { (void)e; g_reprovision = true; }
+
 static void build_topbar(lv_obj_t *parent, const char *title) {
   lv_obj_t *b = lv_label_create(parent);
-  lv_label_set_text(b, "AI\xC2\xB7USAGE");
+  lv_label_set_text(b, "AI\xE2\x80\xA2USAGE");
   lv_obj_set_style_text_color(b, LVC(COL_CLAY), 0);
   lv_obj_set_style_text_font(b, &lv_font_montserrat_14, 0);
   lv_obj_set_pos(b, 12, 9);
+  lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(b, brand_cb, LV_EVENT_LONG_PRESSED, NULL);
 
   lv_obj_t *t = lv_label_create(parent);
   lv_label_set_text(t, title);
@@ -182,13 +199,13 @@ static lv_obj_t *make_gauge(lv_obj_t *parent, int cx, int cy, int r) {
 static void screen_usage_build(lv_obj_t *parent) {
   // top strip
   lblBrand = lv_label_create(parent);
-  lv_label_set_text(lblBrand, "AI\xC2\xB7USAGE");
+  lv_label_set_text(lblBrand, "AI\xE2\x80\xA2USAGE");
   lv_obj_set_style_text_color(lblBrand, LVC(COL_CLAY), 0);
   lv_obj_set_style_text_font(lblBrand, &lv_font_montserrat_14, 0);
   lv_obj_set_pos(lblBrand, 12, 9);
 
   lblModel = lv_label_create(parent);
-  lv_label_set_text(lblModel, "—");
+  lv_label_set_text(lblModel, "--");
   lv_obj_set_style_text_color(lblModel, LVC(COL_INK), 0);
   lv_obj_set_style_text_font(lblModel, &lv_font_montserrat_20, 0);
   lv_obj_align(lblModel, LV_ALIGN_TOP_MID, 0, 6);
@@ -210,7 +227,7 @@ static void screen_usage_build(lv_obj_t *parent) {
   lv_obj_set_style_text_font(lblLive, &lv_font_montserrat_14, 0);
   lv_obj_align(lblLive, LV_ALIGN_TOP_RIGHT, -8, 9);
 
-  // gauges — default lv_arc is a 270° meter with the gap at the bottom
+  // gauges -- default lv_arc is a 270° meter with the gap at the bottom
   const int R = 44;
   int gx[2] = { 120, 520 };
   lv_obj_t **arcs[2] = { &arcFive, &arcSeven };
@@ -243,10 +260,10 @@ static void screen_usage_build(lv_obj_t *parent) {
     *G[i].lab = lab;
 
     lv_obj_t *pct = lv_label_create(parent);
-    lv_label_set_text(pct, "—");
+    lv_label_set_text(pct, "--");
     lv_obj_set_style_text_color(pct, LVC(COL_GOOD), 0);
-    lv_obj_set_style_text_font(pct, &lv_font_montserrat_40, 0);
-    lv_obj_align(pct, LV_ALIGN_LEFT_MID, G[i].cx - 30, 0);
+    lv_obj_set_style_text_font(pct, &lv_font_montserrat_28, 0);
+    lv_obj_align(pct, LV_ALIGN_CENTER, G[i].cx - 320, 11);
     *G[i].pct = pct;
 
     lv_obj_t *rst = lv_label_create(parent);
@@ -285,7 +302,7 @@ static void screen_usage_build(lv_obj_t *parent) {
 
 /* ---------------- screen ② Mac Monitor ---------------- */
 static void screen_monitor_build(lv_obj_t *parent) {
-  build_topbar(parent, "MAC \xC2\xB7 MONITOR");
+  build_topbar(parent, "MAC \xE2\x80\xA2 MONITOR");
 
   struct { lv_obj_t **arc, **val, **cap; int cx; const char *lab; } G[3] = {
     { &arcCpu,  &mValCpu,  &mCapCpu,  110, "CPU"  },
@@ -305,16 +322,16 @@ static void screen_monitor_build(lv_obj_t *parent) {
     lv_obj_set_pos(lab, G[i].cx - 60, 30);
 
     lv_obj_t *val = lv_label_create(parent);
-    lv_label_set_text(val, "—");
+    lv_label_set_text(val, "--");
     lv_obj_set_style_text_color(val, LVC(COL_DIM), 0);
-    lv_obj_set_style_text_font(val, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(val, &lv_font_montserrat_20, 0);
     lv_obj_set_width(val, 120);
     lv_obj_set_style_text_align(val, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(val, G[i].cx - 60, cy - 26);
+    lv_obj_set_pos(val, G[i].cx - 60, cy - 12);
     *G[i].val = val;
 
     lv_obj_t *cap = lv_label_create(parent);
-    lv_label_set_text(cap, "—");
+    lv_label_set_text(cap, "--");
     lv_obj_set_style_text_color(cap, LVC(0x9AA0B2), 0);
     lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
     lv_obj_set_width(cap, 150);
@@ -325,7 +342,7 @@ static void screen_monitor_build(lv_obj_t *parent) {
 
   // net / battery / temp ticker along the bottom
   mTicker = lv_label_create(parent);
-  lv_label_set_text(mTicker, "waiting for bridge…");
+  lv_label_set_text(mTicker, "waiting for bridge...");
   lv_obj_set_style_text_color(mTicker, LVC(0xAEB4C6), 0);
   lv_obj_set_style_text_font(mTicker, &lv_font_montserrat_14, 0);
   lv_obj_align(mTicker, LV_ALIGN_BOTTOM_MID, 0, -6);
@@ -333,7 +350,7 @@ static void screen_monitor_build(lv_obj_t *parent) {
 
 /* ---------------- screen ③ Mac Remote ---------------- */
 static void screen_remote_build(lv_obj_t *parent) {
-  build_topbar(parent, "MAC \xC2\xB7 REMOTE");
+  build_topbar(parent, "MAC \xE2\x80\xA2 REMOTE");
 
   // shortcut row: 4 tiles (icon + name), enqueue open_url/open_app/shortcut
   struct { const char *icon, *name; int act; } S[4] = {
@@ -355,17 +372,15 @@ static void screen_remote_build(lv_obj_t *parent) {
     lv_obj_set_style_border_color(b, LVC(0x23273A), 0);
     lv_obj_add_event_cb(b, remote_cb, LV_EVENT_CLICKED, (void *)(intptr_t)S[i].act);
 
-    lv_obj_t *ic = lv_label_create(b);
-    lv_label_set_text(ic, S[i].icon);
-    lv_obj_set_style_text_color(ic, LVC(COL_INK), 0);
-    lv_obj_set_style_text_font(ic, &lv_font_montserrat_20, 0);
-    lv_obj_align(ic, LV_ALIGN_TOP_MID, 0, 6);
-
+    // one centered "icon  name" label — stacking two labels in a short button
+    // overlapped them, and a single line is easier to read at a glance.
     lv_obj_t *nm = lv_label_create(b);
-    lv_label_set_text(nm, S[i].name);
-    lv_obj_set_style_text_color(nm, LVC(0xC7CDDA), 0);
-    lv_obj_set_style_text_font(nm, &lv_font_montserrat_14, 0);
-    lv_obj_align(nm, LV_ALIGN_BOTTOM_MID, 0, -6);
+    char lbl[40];
+    snprintf(lbl, sizeof(lbl), "%s  %s", S[i].icon, S[i].name);
+    lv_label_set_text(nm, lbl);
+    lv_obj_set_style_text_color(nm, LVC(COL_INK), 0);
+    lv_obj_set_style_text_font(nm, &lv_font_montserrat_20, 0);
+    lv_obj_center(nm);
   }
 
   // control row: media (⏮⏯⏭) · volume (−/mute/+) · system (lock/sleep).
@@ -498,9 +513,9 @@ static void render_cb(lv_timer_t *t) {
 
   char buf[24];
   if (tFive  >= 0) { snprintf(buf, sizeof(buf), "%d%%", tFive);  lv_label_set_text(lblFivePct, buf); }
-  else               lv_label_set_text(lblFivePct, "—");
+  else               lv_label_set_text(lblFivePct, "--");
   if (tSeven >= 0) { snprintf(buf, sizeof(buf), "%d%%", tSeven); lv_label_set_text(lblSevenPct, buf); }
-  else               lv_label_set_text(lblSevenPct, "—");
+  else               lv_label_set_text(lblSevenPct, "--");
   lv_obj_set_style_text_color(lblFivePct,  LVC(util_color(tFive)),  0);
   lv_obj_set_style_text_color(lblSevenPct, LVC(util_color(tSeven)), 0);
 
@@ -508,7 +523,7 @@ static void render_cb(lv_timer_t *t) {
   if (have && pr->model[0])      lv_label_set_text(lblModel, pr->model);
   else if (have && !pr->linked)  lv_label_set_text(lblModel, "not linked");
   else if (have)                 lv_label_set_text(lblModel, "no live data");
-  else                           lv_label_set_text(lblModel, "connecting…");
+  else                           lv_label_set_text(lblModel, "connecting...");
   lv_obj_align(lblModel, LV_ALIGN_TOP_MID, 0, 6);
   // effort chip stays in the top-right corner; hidden when the provider has none
   if (have && pr->effort[0]) {
@@ -563,27 +578,28 @@ static void render_cb(lv_timer_t *t) {
   struct { lv_obj_t *val; int u; } MV[3] = { { mValCpu, mc }, { mValRam, mr }, { mValDisk, md } };
   for (int i = 0; i < 3; i++) {
     if (MV[i].u >= 0) { snprintf(buf, sizeof(buf), "%d%%", MV[i].u); lv_label_set_text(MV[i].val, buf); }
-    else                lv_label_set_text(MV[i].val, "—");
+    else                lv_label_set_text(MV[i].val, "--");
     lv_obj_set_style_text_color(MV[i].val, LVC(util_color(MV[i].u)), 0);
   }
 
   // captions: CPU -> busiest process · RAM/DISK -> used / total (no %f: newlib-nano)
   char cbuf[48];
   if (sy->ok && sy->top_n > 0) {
-    snprintf(cbuf, sizeof(cbuf), "%s %d%%", sy->top[0].name, sy->top[0].cpu);
+    char pn[20]; short_name(sy->top[0].name, pn, sizeof(pn));
+    snprintf(cbuf, sizeof(cbuf), "%s %d%%", pn, sy->top[0].cpu);
     lv_label_set_text(mCapCpu, cbuf);
-  } else lv_label_set_text(mCapCpu, "—");
+  } else lv_label_set_text(mCapCpu, "--");
 
   if (sy->ok && sy->mem_total_gb > 0) {
     int uw = (int)sy->mem_used_gb, uf = (int)((sy->mem_used_gb - uw) * 10 + 0.5f);
     snprintf(cbuf, sizeof(cbuf), "%d.%d / %d GB", uw, uf, (int)(sy->mem_total_gb + 0.5f));
     lv_label_set_text(mCapRam, cbuf);
-  } else lv_label_set_text(mCapRam, "—");
+  } else lv_label_set_text(mCapRam, "--");
 
   if (sy->ok && sy->disk_total_gb > 0) {
     snprintf(cbuf, sizeof(cbuf), "%d / %d GB", sy->disk_used_gb, sy->disk_total_gb);
     lv_label_set_text(mCapDisk, cbuf);
-  } else lv_label_set_text(mCapDisk, "—");
+  } else lv_label_set_text(mCapDisk, "--");
 
   // ticker: net down/up · battery · temp (each shown only when present)
   if (sy->ok) {
@@ -594,7 +610,7 @@ static void render_cb(lv_timer_t *t) {
     if (sy->temp_c >= 0) n += snprintf(tk + n, sizeof(tk) - n, "   %dC", sy->temp_c);
     lv_label_set_text(mTicker, tk);
   } else {
-    lv_label_set_text(mTicker, "waiting for bridge…");
+    lv_label_set_text(mTicker, "waiting for bridge...");
   }
 
   /* ---- transient page dots + remote toast ---- */
@@ -608,18 +624,47 @@ static void render_cb(lv_timer_t *t) {
   }
 }
 
+static void ui_setup_screen() {
+  lv_obj_t *scr = lv_scr_act();
+  lv_obj_clean(scr);
+  lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_style_bg_color(scr, LVC(COL_BG), 0);
+  lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+  lv_obj_t *brand = lv_label_create(scr);
+  lv_label_set_text(brand, "AI\xE2\x80\xA2USAGE  \xE2\x80\x94  SETUP");
+  lv_obj_set_style_text_color(brand, LVC(COL_CLAY), 0);
+  lv_obj_set_style_text_font(brand, &lv_font_montserrat_20, 0);
+  lv_obj_align(brand, LV_ALIGN_TOP_MID, 0, 12);
+  lv_obj_t *t = lv_label_create(scr);
+  lv_label_set_long_mode(t, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(t, SCREEN_W - 40);
+  lv_label_set_text(t,
+    "1   Join Wi-Fi  " LV_SYMBOL_WIFI "  AI-Usage-Bar-Setup\n"
+    "2   Open  192.168.4.1  (if no popup)\n"
+    "3   Pick your 2.4GHz Wi-Fi + password\n"
+    "4   Enter Mac IP + port, then Save");
+  lv_obj_set_style_text_color(t, LVC(COL_INK), 0);
+  lv_obj_set_style_text_font(t, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_align(t, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(t, LV_ALIGN_CENTER, 0, 14);
+}
+
 /* ---------------- networking task (Arduino core) ---------------- */
 static unsigned long g_lastPoll = 0;
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("\n=== AI-USAGE-BAR (3-screen) boot (" __DATE__ " " __TIME__ ") ===");
   i2c_master_Init();
   lvgl_port_init();
   lcd_bl_pwm_bsp_init(LCD_PWM_MODE_255);
 
+  if (aiusage_lvgl_lock(-1)) { ui_setup_screen(); aiusage_lvgl_unlock(); }
+
   net_begin();   // captive portal on first run (SSID: AI-Usage-Bar-Setup)
 
   if (aiusage_lvgl_lock(-1)) {
+    lv_obj_clean(lv_scr_act());
     ui_build();
     lv_timer_create(render_cb, RENDER_INTERVAL_MS, NULL);
     aiusage_lvgl_unlock();
@@ -644,6 +689,13 @@ void loop() {
   if (g_action >= 0) {
     int a = g_action; g_action = -1;
     if (!net_action(ACTION_BODY[a])) Serial.printf("[action] %d failed\n", a);
+  }
+
+  // Long-press the AI-USAGE brand -> reopen the setup portal (outside LVGL lock).
+  if (g_reprovision) {
+    g_reprovision = false;
+    Serial.println("[net] reprovision: opening setup portal (join AI-Usage-Bar-Setup)");
+    net_portal();
   }
 
   delay(50);

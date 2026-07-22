@@ -8,6 +8,7 @@
 #define GH 23
 #define U  5
 #define OYc 2
+#define MASC_OY 3
 #define EMPTY (-1)
 
 static int32_t G[GH][GW];
@@ -346,23 +347,23 @@ void mascot_render(uint16_t *buf, int bw, int bh, int kind, uint32_t fur, int mo
   }
 
   for (int i = 0; i < bw * bh; i++) buf[i] = bg565;
-  int bob = (int)lroundf(sinf(t / 560.0f) * 3.0f);
+  int bob = (int)lroundf(sinf(t / 560.0f) * 2.0f);
 
   uint16_t deep = mascot_to565(p.deep);
   for (int y = 0; y < GH; y++) for (int x = 0; x < GW; x++) {
     if (G[y][x] != EMPTY) continue;
     int up = y > 0 && G[y - 1][x] != EMPTY, dn = y < GH - 1 && G[y + 1][x] != EMPTY;
     int lf = x > 0 && G[y][x - 1] != EMPTY, rt = x < GW - 1 && G[y][x + 1] != EMPTY;
-    if (up || dn || lf || rt) fillRect(buf, bw, bh, x * U, OYc * U + bob + y * U, U, U, deep);
+    if (up || dn || lf || rt) fillRect(buf, bw, bh, x * U, MASC_OY + bob + y * U, U, U, deep);
   }
   for (int y = 0; y < GH; y++) for (int x = 0; x < GW; x++) {
     if (G[y][x] == EMPTY) continue;
-    fillRect(buf, bw, bh, x * U, OYc * U + bob + y * U, U, U, mascot_to565((uint32_t)G[y][x]));
+    fillRect(buf, bw, bh, x * U, MASC_OY + bob + y * U, U, U, mascot_to565((uint32_t)G[y][x]));
   }
 
   if (kind == MASC_CAT) {
     uint16_t wc = mascot_to565(0xf6ecda);
-    int oy = OYc * U + bob;
+    int oy = MASC_OY + bob;
     lineThin(buf, bw, bh, (int)(5.6f * U), oy + (int)(10.3f * U), (int)(1.4f * U), oy + (int)(9.4f * U), wc);
     lineThin(buf, bw, bh, (int)(5.6f * U), oy + (int)(11.2f * U), (int)(1.4f * U), oy + (int)(11.9f * U), wc);
     lineThin(buf, bw, bh, (int)(18.4f * U), oy + (int)(10.3f * U), (int)(22.6f * U), oy + (int)(9.4f * U), wc);
@@ -372,13 +373,13 @@ void mascot_render(uint16_t *buf, int bw, int bh, int kind, uint32_t fur, int mo
   int organic = (kind == MASC_CAT || kind == MASC_HUSKY || kind == MASC_OWL || kind == MASC_ROBOT || kind == MASC_RUNNER);
   if ((mood == MOOD_SWEAT || mood == MOOD_STRESS) && organic) {
     int off = (int)((t / 240 + (mood == MOOD_STRESS ? 1 : 0)) % 4);
-    int sx = (int)(18.6f * U), sy = OYc * U + bob + (9 + off) * U;
+    int sx = (int)(18.6f * U), sy = MASC_OY + bob + (9 + off) * U;
     fillRect(buf, bw, bh, sx, sy, U, (int)(U * 1.2f), mascot_to565(0x7fd0ff));
     fillRect(buf, bw, bh, sx, sy, U, (int)(U * 0.4f), mascot_to565(0xc9ecff));
   }
   if (mood == MOOD_FRIED) {
     int s = (int)((t / 200) % 3);
-    fillRect(buf, bw, bh, (8 + s) * U, OYc * U + bob + 1 * U, (int)(U * 0.8f), (int)(U * 0.8f), mascot_to565(0xffab8a));
-    fillRect(buf, bw, bh, (15 - s) * U, OYc * U + bob + 0 * U, (int)(U * 0.8f), (int)(U * 0.8f), mascot_to565(0xffc8a8));
+    fillRect(buf, bw, bh, (8 + s) * U, MASC_OY + bob + 1 * U, (int)(U * 0.8f), (int)(U * 0.8f), mascot_to565(0xffab8a));
+    fillRect(buf, bw, bh, (15 - s) * U, MASC_OY + bob + 0 * U, (int)(U * 0.8f), (int)(U * 0.8f), mascot_to565(0xffc8a8));
   }
 }

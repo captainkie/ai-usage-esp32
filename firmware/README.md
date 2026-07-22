@@ -27,7 +27,8 @@ re-implementing the driver. You drop these files into a copy of their
   bundled `Arduino_Libraries` (from
   [github.com/waveshareteam/ESP32-S3-Touch-LCD-3.49](https://github.com/waveshareteam/ESP32-S3-Touch-LCD-3.49)).
 - Libraries (Library Manager): **lvgl 8.3.x**, **WiFiManager** (tzapu),
-  **ArduinoJson 6.x**. Plus Waveshare's bundled `SensorLib`.
+  **ArduinoJson 6.x** (v6 only — the code uses the v6 `DynamicJsonDocument` API;
+  ArduinoJson v7 will not compile). Plus Waveshare's bundled `SensorLib`.
 - The bridge running on your Mac (`../bridge`), and its **IP:port**.
 
 ## Assemble the sketch
@@ -57,13 +58,24 @@ re-implementing the driver. You drop these files into a copy of their
    bool aiusage_lvgl_lock(int timeout_ms);
    void aiusage_lvgl_unlock(void);
    ```
-5. **Enable the fonts** used by the UI — in LVGL's `lv_conf.h`:
+5. **⚠️ Disable Waveshare's LVGL demo — the single most important gotcha.** In
+   **`lvgl_port.c`**, near the end of `lvgl_port_init()`, Waveshare launches the
+   LVGL Widgets demo. **Comment that call out:**
+   ```c
+   // lv_demo_widgets();   // ← MUST be commented out
+   ```
+   If you leave it in, the demo bleeds through our UI, and once our UI clears the
+   screen its `meter2_timer_cb` timer fires against freed objects and crashes the
+   board into a Guru Meditation / `LoadProhibited` reboot loop.
+6. **Enable the fonts** used by the UI — in LVGL's `lv_conf.h`:
    ```c
    #define LV_FONT_MONTSERRAT_14 1
    #define LV_FONT_MONTSERRAT_20 1
+   #define LV_FONT_MONTSERRAT_28 1
    #define LV_FONT_MONTSERRAT_40 1
    ```
-   (Also make sure `LV_COLOR_DEPTH 16` — the default for this board.)
+   All four are used — `_28` is the gauge percentage, the ② Monitor values use
+   `_20`. (Also make sure `LV_COLOR_DEPTH 16` — the default for this board.)
 
 ## Board settings (Tools ▸)
 
@@ -79,8 +91,9 @@ re-implementing the driver. You drop these files into a copy of their
 ## Flash & set up
 
 1. Plug in via **USB-C**, select the port, **Upload**.
-2. On first boot the screen’s Wi-Fi isn’t configured → the board starts a
-   captive-portal AP **`AI-Usage-Bar-Setup`**. Join it from your phone/Mac,
+2. On first boot the screen shows an on-screen **SETUP** guidance card (while its
+   Wi-Fi is unconfigured) and starts a captive-portal AP
+   **`AI-Usage-Bar-Setup`**. Join it from your phone/Mac,
    pick your Wi-Fi, and fill the three extra fields:
    - **Mac bridge IP** (e.g. `192.168.1.20`)
    - **Bridge port** (default `8787`)
@@ -93,8 +106,9 @@ re-implementing the driver. You drop these files into a copy of their
    Save.
 3. It reconnects and starts polling `http://<mac-ip>:8787/usage`. Done.
 
-To change the bridge/Wi-Fi later, re-open the portal (erase Wi-Fi or add a
-button that calls `net_portal()`).
+To change the bridge/Wi-Fi later, **long-press the `AI•USAGE` brand** (top-left of
+the screen) for ~1s to reopen the portal — change Wi-Fi or enter/update the pairing
+token, no reflashing needed.
 
 ## Using it
 
