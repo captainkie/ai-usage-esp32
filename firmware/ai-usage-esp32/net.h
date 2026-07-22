@@ -56,6 +56,10 @@ static void net_begin() {
   if (g_host.length() == 0) {
     while (g_host.length() == 0) wm.startConfigPortal(WM_AP_NAME);
   } else {
+    // Don't block on a captive portal if Wi-Fi can't be joined (e.g. carried to an
+    // office network) — return so USB-serial can still drive the display. The user
+    // can long-press the brand to reopen the portal on demand.
+    wm.setEnableConfigPortal(false);
     wm.autoConnect(WM_AP_NAME);
   }
 
@@ -82,23 +86,9 @@ static void parse_window(JsonVariantConst w, Window *dst) {
   dst->reset_in = w["reset_in"] | (long)-1;
 }
 
-// GET http://<bridge>/usage and fill `out`. Returns true on success.
-static bool net_fetch(UsageState *out) {
-  memset(out, 0, sizeof(*out));
-  if (WiFi.status() != WL_CONNECTED) { strcpy(out->err, "wifi"); return false; }
-  if (g_host.length() == 0)          { strcpy(out->err, "no bridge"); return false; }
-
-  String url = "http://" + g_host + ":" + g_port + "/usage";
-  HTTPClient http;
-  http.setConnectTimeout(HTTP_TIMEOUT_MS);
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  if (!http.begin(url)) { strcpy(out->err, "url"); return false; }
-  int code = http.GET();
-  if (code != 200) { snprintf(out->err, sizeof(out->err), "http %d", code); http.end(); return false; }
-
-  String body = http.getString();
-  http.end();
-
+// Parse a /usage JSON body into `out` (caller zeroes `out`). Returns true on
+// success. Shared by the Wi-Fi HTTP path and the USB-serial push path.
+static bool parse_usage_body(const char *body, UsageState *out) {
   // 16384: providers + the `system` block (cpu/mem/disk/net/battery + top[3]).
   DynamicJsonDocument doc(16384);
   if (deserializeJson(doc, body)) { strcpy(out->err, "json"); return false; }
@@ -115,7 +105,7 @@ static bool net_fetch(UsageState *out) {
     parse_window(pr["seven_day"], &ps->seven);
   }
 
-  // ---- Mac system stats (screen ②). Absent block => sys.ok stays false. ----
+  // ---- Mac system stats (screen 2). Absent block => sys.ok stays false. ----
   JsonObjectConst sysj = doc["system"];
   SystemState *s = &out->sys;
   memset(s, 0, sizeof(*s));
@@ -146,6 +136,55 @@ static bool net_fetch(UsageState *out) {
   out->stamp_ms = millis();
   out->err[0] = 0;
   return true;
+}
+
+// GET http://<bridge>/usage and fill `out`. Returns true on success.
+static bool net_fetch(UsageState *out) {
+  memset(out, 0, sizeof(*out));
+  if (WiFi.status() != WL_CONNECTED) { strcpy(out->err, "wifi"); return false; }
+  if (g_host.length() == 0)          { strcpy(out->err, "no bridge"); return false; }
+
+  String url = "http://" + g_host + ":" + g_port + "/usage";
+  HTTPClient http;
+  http.setConnectTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  if (!http.begin(url)) { strcpy(out->err, "url"); return false; }
+  int code = http.GET();
+  if (code != 200) { snprintf(out->err, sizeof(out->err), "http %d", code); http.end(); return false; }
+
+  String body = http.getString();
+  http.end();
+  return parse_usage_body(body.c_str(), out);
+}
+
+// USB-serial transport: the Mac bridge can push the same /usage JSON as newline-
+// delimited frames over the USB CDC link (works with no Wi-Fi at all). Reads at
+// most one full frame per call (non-blocking); returns true and fills `out` when
+// a complete, valid frame arrived.
+static bool net_usb_read(UsageState *out) {
+  static char buf[4096];
+  static size_t len = 0;
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\n' || c == '\r') {
+      bool got = false;
+      if (len > 0 && buf[0] == '{') {
+        buf[len] = '\0';
+        memset(out, 0, sizeof(*out));
+        got = parse_usage_body(buf, out);
+        if (!got) Serial.printf("[usb] parse fail len=%u\n", (unsigned)len);
+      } else if (len > 0) {
+        Serial.printf("[usb] non-json len=%u first=%d\n", (unsigned)len, (int)buf[0]);
+      }
+      len = 0;
+      if (got) return true;
+    } else if (len < sizeof(buf) - 1) {
+      buf[len++] = c;
+    } else {
+      len = 0;   // frame too long -- drop it
+    }
+  }
+  return false;
 }
 
 // POST one allowlisted action to /action with the pairing token injected.
