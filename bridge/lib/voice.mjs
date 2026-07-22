@@ -48,7 +48,9 @@ export function pickVoice(lang) {
 
 /** TTS — write `text` to a 16 kHz mono WAV via macOS `say` (no ffmpeg). */
 export async function synthesize(text, lang, outWav) {
-  await execFileP("say", ["-v", pickVoice(lang), "-o", outWav, "--data-format=LEI16@16000", text]);
+  // `--` terminates option parsing, so a reply that begins with "-" is spoken as
+  // text and can't smuggle flags into `say` (argv flag injection).
+  await execFileP("say", ["-v", pickVoice(lang), "-o", outWav, "--data-format=LEI16@16000", "--", String(text)]);
   return outWav;
 }
 
