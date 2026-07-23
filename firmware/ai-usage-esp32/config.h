@@ -6,6 +6,13 @@
 #define WM_AP_NAME       "AI-Usage-Bar-Setup"   // captive-portal SSID
 #define WM_AP_TIMEOUT_S  600                     // portal timeout before retrying STA
 
+// ---- multi-network Wi-Fi store (WiFiMulti + TF-card seed) ----
+#define MAX_WIFI_APS         6         // max saved networks (home/office/hotspot/…)
+#define WIFI_JOIN_TIMEOUT_MS 8000      // WiFiMulti.run() connect timeout per boot
+#define SD_CONFIG_PATH       "/pixie.json"   // read-only config at the TF-card root
+
+typedef struct { char ssid[33]; char pass[64]; } WifiCred;
+
 // ---- bridge polling ----
 #define POLL_INTERVAL_MS   15000                 // how often to ask the Mac bridge
 #define HTTP_TIMEOUT_MS    6000
