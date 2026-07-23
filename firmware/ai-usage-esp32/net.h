@@ -41,7 +41,7 @@ static void net_save_params() {
 // Read the TF-card /pixie.json (if any) and seed the NVS AP store + token/host/port.
 // Import-and-forget: after this the card can be removed; the password lives in NVS.
 static void net_import_card() {
-  PixieConfig cfg;
+  static PixieConfig cfg;   // static: large struct, keep it off the boot-path stack
   if (!sdconf_load(&cfg)) { Serial.println("[sd] no /pixie.json (using NVS)"); return; }
   Serial.printf("[sd] pixie.json: %d wifi, token=%s, host=%s\n",
                 cfg.wifi_n, cfg.token[0] ? "set" : "-", cfg.host[0] ? cfg.host : "(mDNS)");
@@ -87,7 +87,7 @@ static void net_begin() {
   g_prefs.end();
 
   // 3. build WiFiMulti from the NVS AP store
-  WifiCred aps[MAX_WIFI_APS];
+  static WifiCred aps[MAX_WIFI_APS];   // static: keep it off the boot-path stack
   int naps = wifistore_load(aps, MAX_WIFI_APS);
   for (int i = 0; i < naps; i++) g_wifiMulti.addAP(aps[i].ssid, aps[i].pass);
   if (naps > 0) provisioned = true;

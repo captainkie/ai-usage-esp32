@@ -11,7 +11,8 @@
 
 // Parse a JSON array `[{"ssid":"..","pass":".."}]` into out[]. Returns the count.
 static int wifistore_parse(const char *json, WifiCred out[], int max) {
-  StaticJsonDocument<1024> doc;
+  static StaticJsonDocument<1024> doc;   // static: keep this off the boot-path stack
+  doc.clear();
   if (deserializeJson(doc, json)) return 0;
   int n = 0;
   for (JsonObjectConst e : doc.as<JsonArrayConst>()) {
@@ -27,7 +28,8 @@ static int wifistore_parse(const char *json, WifiCred out[], int max) {
 
 // Serialize list[] into a JSON array string. Returns bytes written (excl. NUL).
 static size_t wifistore_serialize(const WifiCred list[], int n, char *out, size_t cap) {
-  StaticJsonDocument<1024> doc;
+  static StaticJsonDocument<1024> doc;   // static: keep this off the boot-path stack
+  doc.clear();
   JsonArray arr = doc.to<JsonArray>();
   for (int i = 0; i < n; i++) {
     JsonObject o = arr.createNestedObject();
@@ -66,10 +68,10 @@ static int wifistore_load(WifiCred out[], int max) {
 
 // Merge one network into NVS (load -> merge -> serialize -> put). No-op if unchanged.
 static void wifistore_merge(const WifiCred *e) {
-  WifiCred list[MAX_WIFI_APS];
+  static WifiCred list[MAX_WIFI_APS];    // static: this boot-path runs single-threaded
   int n = wifistore_load(list, MAX_WIFI_APS);
   if (!wifistore_merge_into(list, &n, MAX_WIFI_APS, e)) return;
-  char buf[1024];
+  static char buf[1024];
   wifistore_serialize(list, n, buf, sizeof(buf));
   Preferences p; p.begin("aiusage", false);
   p.putString("aps", buf);

@@ -21,7 +21,8 @@ typedef struct {
 // Parse a pixie.json body into out. Pure; host-testable. Returns out->present.
 static bool sdconf_parse(const char *json, PixieConfig *out) {
   memset(out, 0, sizeof(*out));
-  StaticJsonDocument<2048> doc;
+  static StaticJsonDocument<2048> doc;   // static: keep this off the boot-path stack
+  doc.clear();
   if (deserializeJson(doc, json)) return false;
   int n = 0;
   for (JsonObjectConst e : doc["wifi"].as<JsonArrayConst>()) {
