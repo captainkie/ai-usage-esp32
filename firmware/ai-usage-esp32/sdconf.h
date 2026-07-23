@@ -6,9 +6,8 @@
 #include <ArduinoJson.h>
 #include "config.h"
 #ifdef ARDUINO
-#include <FS.h>
-#include <SD.h>
-#include "src/sdcard_bsp/sdcard_bsp.h"
+#include <esp_err.h>
+#include "src/sdcard_bsp/sdcard_bsp.h"   // Waveshare 04_SD_Card: SDMMC mount at /sdcard
 #endif
 
 typedef struct {
@@ -43,19 +42,26 @@ static bool sdconf_parse(const char *json, PixieConfig *out) {
 }
 
 #ifdef ARDUINO
-// Mount the TF card (BSP) and read /pixie.json. Returns false if no card/file/bad JSON.
-// NOTE: confirm sdcard_bsp_init() vs the Waveshare 04_SD_Card example before flashing
-// (it may be SD.begin(cs) / SD_MMC.begin()); see the plan Task 3 Step 3.
+// Mount the TF card (SDMMC via the Waveshare 04_SD_Card BSP; mount point /sdcard) and
+// read /sdcard/pixie.json. Read-only — the firmware never writes to the card. Returns
+// false on no card / no file / bad JSON.
+// GPIO8 SAFETY: sdcard_init() uses only the SDMMC pins (D0=40/CLK=41/CMD=39); it does NOT
+// touch GPIO8 (the display's LEDC PWM backlight rail). We deliberately do NOT replicate the
+// 04_SD_Card example's gpio_init() (which forces GPIO8 high), so mounting cannot dim/kill
+// the panel. The SD card is powered independently of the backlight.
 static bool sdconf_load(PixieConfig *out) {
   memset(out, 0, sizeof(*out));
-  if (!sdcard_bsp_init()) return false;
-  File f = SD.open(SD_CONFIG_PATH, FILE_READ);
+  static bool mounted = false;
+  if (!mounted) { sdcard_init(); mounted = true; }   // no-op safe if no card is inserted
+  FILE *f = fopen(SD_CONFIG_PATH, "rb");
   if (!f) return false;
-  size_t sz = f.size();
-  if (sz == 0 || sz >= 4096) { f.close(); return false; }
+  fseek(f, 0, SEEK_END);
+  long sz = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  if (sz <= 0 || sz >= 4096) { fclose(f); return false; }
   static char buf[4096];
-  size_t rd = f.read((uint8_t *)buf, sz);
-  f.close();
+  size_t rd = fread(buf, 1, (size_t)sz, f);
+  fclose(f);
   buf[rd] = '\0';
   return sdconf_parse(buf, out);
 }

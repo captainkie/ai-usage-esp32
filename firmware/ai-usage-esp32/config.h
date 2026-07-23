@@ -9,7 +9,7 @@
 // ---- multi-network Wi-Fi store (WiFiMulti + TF-card seed) ----
 #define MAX_WIFI_APS         6         // max saved networks (home/office/hotspot/…)
 #define WIFI_JOIN_TIMEOUT_MS 8000      // WiFiMulti.run() connect timeout per boot
-#define SD_CONFIG_PATH       "/pixie.json"   // read-only config at the TF-card root
+#define SD_CONFIG_PATH       "/sdcard/pixie.json"   // TF-card root via the SDMMC /sdcard mount
 
 typedef struct { char ssid[33]; char pass[64]; } WifiCred;
 
