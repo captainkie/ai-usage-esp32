@@ -278,6 +278,12 @@ async function askClaude(prompt) {
 let lastGoodClaude = { model: null, effort: null, five_hour: null, seven_day: null };
 let lastGoodAt = 0;
 
+// Usage-endpoint backoff. It's rate-limited (shared with the menu-bar app), so on a
+// 429 we stop polling it for a growing window (30s → … → 10m) to let the limit
+// recover instead of hammering it every cycle. Reset on the next success.
+let usageBackoffUntil = 0;
+let usageBackoffMs = 0;
+
 // Persist last-known-good to disk so a bridge *restart* (or a cold start during a
 // 429) still shows the last real reading instead of blanking to "no live data".
 const LAST_GOOD_PATH = path.join(HOME, ".config", "ai-usage-bridge", "last-good.json");
@@ -303,32 +309,43 @@ async function buildPayload() {
 
   const token = await readClaudeToken();
   if (token) {
-    providers.claude.linked = true;
-    try {
-      const [usage, modelId, effort] = await Promise.all([
-        fetchUsage(token), currentModelId(), currentEffort(),
-      ]);
-      providers.claude.model = prettyModel(modelId);
-      providers.claude.effort = effort;
-      providers.claude.five_hour = usage.five_hour ? win(usage.five_hour) : null;
-      providers.claude.seven_day = usage.seven_day ? win(usage.seven_day) : null;
-    } catch (e) {
-      providers.claude.error = e.message;   // e.g. "unauthorized" -> open Claude Code
-    }
-  }
-
-  // Sticky last-known-good: a transient 429/timeout or a momentary gap in model
-  // detection shouldn't blank the device. Reuse the last real values; only
-  // overwrite them when a fresh, non-null value arrives.
-  if (providers.claude.linked) {
     const c = providers.claude;
-    let fresh = false;
+    c.linked = true;
+
+    // Model + effort come from local files (free) — always refresh, independent
+    // of the rate-limited usage endpoint (so a usage 429 doesn't wipe the model).
+    try { c.model = prettyModel(await currentModelId()); } catch { /* keep null */ }
+    try { c.effort = await currentEffort(); } catch { /* keep null */ }
+
+    // Usage: fetch unless we're in a backoff window. On 429, grow the backoff so
+    // we stop adding pressure and let the limit recover.
+    let freshUsage = false;
+    if (Date.now() >= usageBackoffUntil) {
+      try {
+        const usage = await fetchUsage(token);
+        c.five_hour = usage.five_hour ? win(usage.five_hour) : null;
+        c.seven_day = usage.seven_day ? win(usage.seven_day) : null;
+        freshUsage = true;
+        usageBackoffMs = 0; usageBackoffUntil = 0;   // recovered
+      } catch (e) {
+        usageBackoffMs = Math.min((usageBackoffMs || 15_000) * 2, 600_000);
+        usageBackoffUntil = Date.now() + usageBackoffMs;
+        c.error = e.message;                          // e.g. "http 429" / "unauthorized"
+      }
+    } else {
+      c.error = "rate-limited (backing off)";
+    }
+
+    // Sticky last-known-good: keep showing the last real reading instead of
+    // blanking — but be HONEST that it's stale rather than pretending it's live.
     for (const k of ["model", "effort", "five_hour", "seven_day"]) {
       if (c[k] == null) c[k] = lastGoodClaude[k];
-      else { lastGoodClaude[k] = c[k]; fresh = true; }
+      else lastGoodClaude[k] = c[k];
     }
-    if (fresh) { lastGoodAt = Date.now(); saveLastGood(); }
-    if (c.five_hour || c.model) delete c.error;   // we have something real to show
+    if (freshUsage && c.five_hour) { lastGoodAt = Date.now(); saveLastGood(); delete c.error; }
+    // stale = we're serving a persisted usage reading, not a fresh one this cycle.
+    c.stale = !freshUsage && !!(c.five_hour || c.seven_day);
+    if (c.stale) c.usage_age_s = lastGoodAt ? Math.round((Date.now() - lastGoodAt) / 1000) : null;
   }
 
   let system = null;
