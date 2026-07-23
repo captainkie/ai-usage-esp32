@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiManager.h>     // tzapu/WiFiManager
+#include <ESPmDNS.h>         // auto-discover the Mac bridge (_aiusage._tcp)
 #include <Preferences.h>
 #include <ArduinoJson.h>     // bblanchon/ArduinoJson v6
 #include "config.h"
@@ -27,8 +28,10 @@ static void net_save_params() {
   g_prefs.putString("host", g_host);
   g_prefs.putString("port", g_port);
   g_prefs.putString("token", g_token);
+  g_prefs.putBool("prov", true);   // provisioned at least once (host may be blank -> mDNS)
   g_prefs.end();
-  snprintf(g_bridge_desc, sizeof(g_bridge_desc), "%s:%s", g_host.c_str(), g_port.c_str());
+  snprintf(g_bridge_desc, sizeof(g_bridge_desc), "%s:%s",
+           g_host.length() ? g_host.c_str() : "(mDNS)", g_port.c_str());
 }
 
 // Bring up Wi-Fi. Opens the captive portal ("AI-Usage-Bar-Setup") when there
@@ -39,11 +42,14 @@ static void net_begin() {
   g_host  = g_prefs.getString("host", "");
   g_port  = g_prefs.getString("port", String(DEFAULT_BRIDGE_PORT));
   g_token = g_prefs.getString("token", "");
+  // Provisioned if the flag is set OR a host was saved by an older firmware
+  // (migration: pre-"prov" devices already have a host and must not re-enter setup).
+  bool provisioned = g_prefs.getBool("prov", false) || g_host.length() > 0;
   g_prefs.end();
 
   WiFiManager wm;
   wm.setConfigPortalTimeout(WM_AP_TIMEOUT_S);
-  static WiFiManagerParameter pHost("host", "Mac bridge IP (e.g. 192.168.1.20)", g_host.c_str(), 24);
+  static WiFiManagerParameter pHost("host", "Mac bridge IP (blank = auto-find via mDNS)", g_host.c_str(), 24);
   static WiFiManagerParameter pPort("port", "Bridge port", g_port.c_str(), 6);
   static WiFiManagerParameter pTok("token", "Pairing token (from the Mac bridge)", g_token.c_str(), 40);
   g_pHost = &pHost; g_pPort = &pPort; g_pTok = &pTok;
@@ -52,13 +58,18 @@ static void net_begin() {
   wm.addParameter(&pTok);
   wm.setSaveParamsCallback(net_save_params);
 
-  // Force the portal the first time (no bridge IP yet); otherwise auto-connect.
-  if (g_host.length() == 0) {
-    while (g_host.length() == 0) wm.startConfigPortal(WM_AP_NAME);
+  // Force the portal on the very first run (never provisioned). After that the
+  // Mac IP may be left blank — mDNS discovers the bridge — so we key off a
+  // "provisioned" flag, not an empty host.
+  if (!provisioned) {
+    while (!provisioned) {
+      wm.startConfigPortal(WM_AP_NAME);
+      g_prefs.begin("aiusage", true); provisioned = g_prefs.getBool("prov", false); g_prefs.end();
+    }
   } else {
     // Don't block on a captive portal if Wi-Fi can't be joined (e.g. carried to an
-    // office network) — return so USB-serial can still drive the display. The user
-    // can long-press the brand to reopen the portal on demand.
+    // office network) — return so USB-serial can still drive the display. Tap the
+    // LIVE indicator to reopen the portal on demand.
     wm.setEnableConfigPortal(false);
     wm.autoConnect(WM_AP_NAME);
   }
@@ -138,11 +149,30 @@ static bool parse_usage_body(const char *body, UsageState *out) {
   return true;
 }
 
+// Auto-discover the Mac bridge on the LAN via mDNS (the bridge advertises
+// `_aiusage._tcp`). Updates g_host/g_port on success. Lets the device find the Mac
+// with no typed IP, and recover automatically when the Mac's IP changes (e.g.
+// carried between home and office). Returns true if a bridge was found.
+static bool g_mdns_up = false;
+static bool net_discover() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  if (!g_mdns_up) { g_mdns_up = MDNS.begin("pixie"); if (!g_mdns_up) return false; }
+  int n = MDNS.queryService("aiusage", "tcp");   // -> _aiusage._tcp
+  if (n <= 0) return false;
+  g_host = MDNS.address(0).toString();
+  uint16_t p = MDNS.port(0);
+  if (p) g_port = String(p);
+  snprintf(g_bridge_desc, sizeof(g_bridge_desc), "%s:%s", g_host.c_str(), g_port.c_str());
+  Serial.printf("[mdns] found bridge at %s:%s\n", g_host.c_str(), g_port.c_str());
+  return true;
+}
+
 // GET http://<bridge>/usage and fill `out`. Returns true on success.
 static bool net_fetch(UsageState *out) {
   memset(out, 0, sizeof(*out));
   if (WiFi.status() != WL_CONNECTED) { strcpy(out->err, "wifi"); return false; }
-  if (g_host.length() == 0)          { strcpy(out->err, "no bridge"); return false; }
+  if (g_host.length() == 0) net_discover();                 // no IP typed -> mDNS
+  if (g_host.length() == 0) { strcpy(out->err, "no bridge"); return false; }
 
   String url = "http://" + g_host + ":" + g_port + "/usage";
   HTTPClient http;
@@ -150,7 +180,12 @@ static bool net_fetch(UsageState *out) {
   http.setTimeout(HTTP_TIMEOUT_MS);
   if (!http.begin(url)) { strcpy(out->err, "url"); return false; }
   int code = http.GET();
-  if (code != 200) { snprintf(out->err, sizeof(out->err), "http %d", code); http.end(); return false; }
+  if (code != 200) {
+    snprintf(out->err, sizeof(out->err), "http %d", code);
+    http.end();
+    net_discover();   // maybe the Mac's IP changed (moved locations) — refresh for next poll
+    return false;
+  }
 
   String body = http.getString();
   http.end();
