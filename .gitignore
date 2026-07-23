@@ -25,3 +25,8 @@ design/tools/mctest
 build/
 *.bin
 *.elf
+design/tools/vendor/
+
+.env
+.env.*
+!.env.example

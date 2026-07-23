@@ -37,7 +37,8 @@ re-implementing the driver. You drop these files into a copy of their
    `ai-usage-esp32`** (Arduino needs the folder name to match the `.ino`).
 2. **Delete** `09_LVGL_V8_Test.ino` from it, and **copy in** every file from
    this `firmware/ai-usage-esp32/` folder:
-   `ai-usage-esp32.ino`, `config.h`, `mascot.h`, `mascot.c`, `net.h`.
+   `ai-usage-esp32.ino`, `config.h`, `mascot.h`, `mascot.c`, `net.h`,
+   `sdconf.h`, `wifistore.h`, and the `src/sdcard_bsp/` folder.
    Keep all of Waveshare's other files (`user_config.h`, `lvgl_port.*`,
    `i2c_bsp.*`, `src/…`).
 3. **Rotate to landscape** — in `user_config.h` set:

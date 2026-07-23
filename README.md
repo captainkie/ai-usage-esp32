@@ -183,6 +183,36 @@ restrictive office network you have two tether-free options:
 > to disk** (`~/.config/ai-usage-bridge/last-good.json`), so even a bridge restart —
 > or a cold start during a 429 — shows your last real reading instead of blanking.
 
+### Save your networks on a TF card (`pixie.json`)
+
+Instead of re-typing Wi-Fi at each place, list several networks in a `pixie.json` file
+at the **root of a TF card** (template: [`firmware/pixie.example.json`](firmware/pixie.example.json)):
+
+- Pixie **auto-joins the strongest** saved network in range (WiFiMulti) — home, office,
+  or phone hotspot — with no re-typing when you move.
+- Leave `bridge_host` blank and it **auto-finds the Mac via mDNS** — no IP to type.
+- The `token` (pairing token) travels with it too, so a new location needs nothing typed.
+
+On first boot Pixie imports the card into the device's on-board flash and runs from there,
+so you can **remove the card afterwards**. Pixie **never writes** to the card.
+
+#### ⚠️ Security — please read before giving one away
+
+- **Wi-Fi passwords live in the device's on-board flash (NVS).** NVS is **not encrypted** —
+  someone with the board and a flash dumper could read them — but it's soldered on, so it's
+  the higher bar. Treat Pixie like any gadget that remembers your Wi-Fi.
+- **`pixie.json` on the TF card is plaintext**, readable on any computer. On first boot Pixie
+  copies it into flash (*"import-and-forget"*), so **remove the card** afterwards and the
+  password no longer rides on removable media. Keep the card inserted only if you want the
+  config to survive a firmware reflash — and accept that whoever takes the card can read it.
+- A card (when present) **wins over** the portal/flash values at boot. If you reconfigure via
+  the setup portal with a card inserted, update `pixie.json` (or remove the card) or the card
+  values return on the next boot.
+- **The pairing token is a secret** — it gates the Remote and Voice features. If it leaks,
+  rotate it at the bridge.
+- **For a giveaway unit, use a guest / dedicated Wi-Fi**, not your main network, and hand it
+  over with the card removed (config already in flash).
+
 ## The companions
 
 | | | | | | | |
