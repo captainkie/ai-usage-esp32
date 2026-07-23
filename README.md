@@ -1,10 +1,10 @@
 <div align="center">
 
-# AI Usage Bar · ESP32
+# Pixie
 
-**Your Claude Code usage limits, live on a tiny desk display — with a pixel companion that panics when you're about to run out.**
+**AI Usage Bar for the ESP32-S3 — your Claude Code usage limits, live on a tiny desk display, with a pixel companion that panics when you're about to run out.**
 
-A private, open-source desk gadget for the **Waveshare ESP32-S3-Touch-LCD-3.49**
+Pixie is a private, open-source desk companion for the **Waveshare ESP32-S3-Touch-LCD-3.49**
 (640×172 touch LCD). It shows your rolling **5-hour** and **weekly** Claude Code
 limits as twin arc gauges, the model + effort you're on, and a live reset
 countdown — plus a switchable **pixel companion** (🐱 🤖 🐺 🦉 💀 🏃 🦖) that
@@ -79,6 +79,26 @@ same 640×172 gauge language:
 > **[AI Usage Bar for macOS](https://github.com/captainkie/ai-usage-bar)** — same data,
 > same privacy stance. **Run both:** the menu-bar app while you work, this little
 > screen glowing on your desk. They even share the exact same usage feed.
+
+## Voice (Pixie)
+
+*Phase 1 · in progress* — the audio pipeline + bridge voice endpoint are landing now.
+
+Say **"Jarvis"** (or tap the screen) → ask a question → **Pixie answers out loud**.
+
+<img src="design/previews/screen-voice.png" width="640" alt="Pixie Voice screen — a mic orb in the SPEAKING state, a 'you said' transcript line, Pixie's spoken reply, and the pixel companion reacting, on the 640×172 display" />
+
+<sub>**④ Pixie Voice** — say "Jarvis" (or tap), ask, and Pixie speaks Claude's answer. Speech-to-text and text-to-speech run free + local on your Mac.</sub>
+
+- **Speech is free + local on your Mac** — [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+  for speech-to-text and macOS **`say`** (a **female** voice) for text-to-speech. No cloud STT/TTS,
+  no per-word fees — your audio never leaves the Mac.
+- **Claude is the brain** — only the transcript **text** goes to Claude (the same trust boundary as
+  the dashboard). The new **`/voice`** bridge endpoint is **token-gated**, exactly like `/action`.
+- **On-device UI** — screen **④** cycles the state (🎤 listening → 💭 thinking → 🔊 speaking → idle),
+  shows the transcript and Pixie's reply, and the pixel companion reacts.
+- **Needs Wi-Fi for now** — the audio streams to the Mac over Wi-Fi (the dashboard still runs over USB;
+  USB-audio is a later option).
 
 ## How it works
 
@@ -227,8 +247,14 @@ Full notes + driver rationale in **[esp32/HARDWARE.md](esp32/HARDWARE.md)**.
   typing its IP), and a TF-card config file — so switching between locations
   needs no re-typing at all.
 - **Bluetooth (BLE) transport** *(planned)* — a wireless, network-free link to the Mac.
-- **On-device AI voice assistant** *(planned)* — the board has a dual-mic array + audio
-  codec (ES7210 ADC / ES8311 DAC + speaker header); wake-word or push-to-talk to an LLM.
+- **Voice AI assistant — "Pixie"** *(Phase 1 in progress)* — say **"Jarvis"** or tap → ask → Pixie
+  speaks Claude's answer, with STT + TTS free + local on your Mac. The board's dual-mic array + audio
+  codec (ES7210 ADC / ES8311 DAC + speaker header) do the ears + mouth. The assistant then grows:
+  - **"Pixie" custom wake word** — Phase 1 ships on the stock, offline **"Jarvis"** WakeNet word first;
+    the brand-matching **"Pixie"** wake word needs a custom model (a fast-follow).
+  - **Multi-provider (GPT / Gemini / Kimi) + an AI-settings screen ④** — pick the brain per query.
+  - **Voice control** — "lock my Mac", "switch to Codex" — drive the device + Mac by voice.
+  - **Proactive spoken announcements** — usage / reset alerts Pixie says out loud.
 
 ## Privacy
 

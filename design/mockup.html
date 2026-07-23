@@ -1,4 +1,5 @@
-<title>AI Usage Bar · ESP32 — Screen Preview</title>
+<meta charset="utf-8">
+<title>Pixie · AI Usage Bar · ESP32 — Screen Preview</title>
 <style>
   /* ---------- Page tokens (theme-aware chrome around the device) ---------- */
   :root{
@@ -127,7 +128,7 @@
   .foot{max-width:760px;margin:26px auto 0;color:var(--muted);font-size:12.5px;line-height:1.6;text-align:center}
   .foot .real{color:var(--ink);font-weight:600}
 
-  @media (prefers-reduced-motion: reduce){ .live .dot{animation:none} }
+  @media (prefers-reduced-motion: reduce){ .live .dot,.v-orb.ring::after{animation:none} }
 
   /* ---------- companion gallery (README asset, ?gallery) ---------- */
   .gallery{margin:8px auto 0;max-width:820px;text-align:center;
@@ -143,7 +144,7 @@
   .glabel2{font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:700;letter-spacing:.04em;color:#c7cdda}
 
   /* ---------- multi-screen (swipe) ---------- */
-  .track{position:absolute;top:0;left:0;width:1920px;height:172px;display:flex;z-index:1;
+  .track{position:absolute;top:0;left:0;width:2560px;height:172px;display:flex;z-index:1;
     transition:transform .34s cubic-bezier(.22,.61,.36,1);will-change:transform}
   .page{position:relative;width:640px;height:172px;flex:0 0 640px;overflow:hidden}
 
@@ -196,6 +197,35 @@
     font-size:11px;font-weight:600;padding:4px 12px;border-radius:8px;z-index:8;opacity:0;
     transition:.25s;pointer-events:none;white-space:nowrap}
   .r-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ---------- Voice page (④ Pixie) ---------- */
+  .v-orb{position:absolute;left:20px;top:40px;width:58px;height:58px;border-radius:50%;z-index:4;
+    --vc:#37e0a1;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;
+    background:radial-gradient(circle at 50% 35%, #171a24, #0c0e16 72%);
+    border:1px solid #23273a;box-shadow:0 0 0 1px #000 inset,0 0 18px #37e0a144;
+    transition:box-shadow .2s ease,border-color .2s ease}
+  .v-orb:active{transform:scale(.95)}
+  .v-orb .v-ic{font-size:25px;line-height:1}
+  .v-orb.ring::after{content:"";position:absolute;inset:-5px;border-radius:50%;
+    border:2px solid var(--vc);opacity:.5;animation:vring 1.8s ease-out infinite}
+  @keyframes vring{0%{transform:scale(.82);opacity:.55}70%{opacity:0}100%{transform:scale(1.5);opacity:0}}
+  .v-state{position:absolute;left:92px;top:43px;z-index:4;font-family:ui-monospace,Menlo,monospace;
+    font-size:21px;font-weight:800;letter-spacing:.02em;color:#37e0a1}
+  .v-sub{position:absolute;left:92px;top:72px;z-index:4;font-family:ui-monospace,Menlo,monospace;
+    font-size:10px;letter-spacing:.14em;font-weight:700;text-transform:uppercase;color:#767c90}
+  .v-you,.v-reply{position:absolute;left:20px;z-index:4;display:flex;gap:8px;align-items:baseline;overflow:hidden}
+  .v-you{top:103px;right:132px}
+  .v-reply{top:128px;right:132px}
+  .v-tag{flex:0 0 auto;font-family:ui-monospace,Menlo,monospace;font-size:9px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;color:#5c6274;background:#12141d;border:1px solid #23273a;border-radius:5px;padding:2px 6px}
+  .v-tag.pixie{color:#0a0b10;background:linear-gradient(135deg,#e79b7d,#d97757);border-color:transparent}
+  .v-txt{font-size:13px;font-weight:600;color:#c7cdda;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .v-reply .v-txt{color:#eef0f6}
+  .mascot-v{position:absolute;left:516px;top:42px;width:100px;height:100px;z-index:4;image-rendering:pixelated}
+  .v-foot{position:absolute;left:16px;right:16px;bottom:7px;z-index:4;text-align:center;
+    font-family:ui-monospace,Menlo,monospace;font-size:9.5px;letter-spacing:.02em;color:#767c90;line-height:1.4}
+  .v-foot b{color:#c9713f;font-weight:700}
+  .v-foot .v-dim{color:#5c6274}
 </style>
 
 <div class="wrap">
@@ -307,6 +337,24 @@
               </div>
               <div class="r-toast" id="rToast"></div>
             </div><!-- /page 2 -->
+
+            <div class="page pg-voice" data-page="3">
+              <div class="topbar">
+                <div class="brand"><span class="glyph"></span><span class="txt">AI·USAGE</span></div>
+                <div class="model">PIXIE <span class="dim">· VOICE</span></div>
+                <div class="rightmeta">
+                  <span class="chip" id="vChip">JARVIS</span>
+                  <span class="live"><span class="dot"></span>LIVE</span>
+                </div>
+              </div>
+              <div class="v-orb" id="vOrb"><span class="v-ic" id="vIc">🎤</span></div>
+              <div class="v-state" id="vState">LISTENING</div>
+              <div class="v-sub" id="vSub">say "Jarvis" or tap</div>
+              <div class="v-you"><span class="v-tag">you said</span><span class="v-txt" id="vYou">what model am I on?</span></div>
+              <div class="v-reply"><span class="v-tag pixie">Pixie</span><span class="v-txt" id="vReply">You're on Opus 4.8 — 5-hour at 41%.</span></div>
+              <canvas class="mascot-v" id="mascotV" width="120" height="120"></canvas>
+              <div class="v-foot">say <b>"Jarvis"</b> or tap · answer is spoken <span class="v-dim">(whisper.cpp + say, on your Mac)</span></div>
+            </div><!-- /page 3 -->
             </div><!-- /track -->
 
             <div class="pagedots" id="pagedots"></div>
@@ -325,6 +373,7 @@
         <button class="seg" type="button" aria-pressed="true"  data-go="0">① AI Usage</button>
         <button class="seg" type="button" aria-pressed="false" data-go="1">② Mac Monitor</button>
         <button class="seg" type="button" aria-pressed="false" data-go="2">③ Mac Remote</button>
+        <button class="seg" type="button" aria-pressed="false" data-go="3">④ Pixie Voice</button>
       </div>
     </div>
     <div>
@@ -352,10 +401,21 @@
         <div class="slbox"><input type="range" id="simDisk" min="0" max="100" value="74" aria-label="Disk %"></div>
       </div>
     </div>
+    <div>
+      <span class="ctl-label">Voice (Pixie) — จำลองสถานะผู้ช่วยเสียง (ปัดไปหน้า ④ · แตะไมค์บนจอก็สลับได้)</span>
+      <div class="row" style="gap:12px 16px">
+        <div class="segs" id="voiceSegs"></div>
+        <div class="sim">
+          <button class="toggle" id="vCycle" aria-pressed="false" type="button">▶ Cycle states</button>
+        </div>
+      </div>
+    </div>
     <p class="hint">แตะ pill บนจอเพื่อสลับ provider ได้เหมือน touchscreen จริง · สีเกจ:
       <span class="mono">เขียว &lt;60% · เหลือง 60–85% · แดง &gt;85%</span> · แมวอ่านจากวงที่ usage สูงสุด ·
       หน้า <span class="mono">② Monitor</span> อ่าน CPU/RAM/Disk/Net/แบต จาก Mac bridge · หน้า
-      <span class="mono">③ Remote</span> แตะปุ่มแล้วสั่ง Mac ผ่าน bridge (มี pairing token กัน)</p>
+      <span class="mono">③ Remote</span> แตะปุ่มแล้วสั่ง Mac ผ่าน bridge (มี pairing token กัน) · หน้า
+      <span class="mono">④ Voice</span> พูด <span class="mono">"Jarvis"</span> (หรือแตะ) แล้ว Pixie ตอบด้วยเสียง —
+      whisper.cpp + <span class="mono">say</span> รันฟรีบน Mac, token-gated เหมือน <span class="mono">/action</span></p>
   </div>
 
   <p class="foot">
@@ -434,6 +494,7 @@
      expression follows the busiest gauge.
      ============================================================ */
   const cv=$("#mascot"), cx=cv.getContext("2d"); cx.imageSmoothingEnabled=false;
+  const cvV=$("#mascotV"), cxV=cvV?cvV.getContext("2d"):null; if(cxV) cxV.imageSmoothingEnabled=false;
   const CW=cv.width, CH=cv.height, GW=24, GH=23, U=5, OYc=2;
   const moodOf=(u)=> u>=98?"fried": u>=90?"stress": u>=75?"sweat": u>=50?"focus":"chill";
   let blink=0, frame_i=0, catCur="#e08040", mascotKind="runner";
@@ -717,6 +778,8 @@
       const[a,b]=P(8+s,1); cx.fillStyle="rgba(255,150,110,.8)"; cx.fillRect(a,b,U*.8,U*.8);
       const[d,e]=P(15-s,0); cx.fillStyle="rgba(255,190,150,.7)"; cx.fillRect(d,e,U*.8,U*.8);
     }
+    // mirror the same companion onto the Voice screen (④) so it reacts there too
+    if(cxV){ cxV.clearRect(0,0,CW,CH); cxV.drawImage(cv,0,0); }
   }
 
   /* ---------- provider pills + controls ---------- */
@@ -813,7 +876,7 @@
      MULTI-SCREEN — ② Mac Monitor + ③ Mac Remote (+ swipe nav)
      ============================================================ */
   const track = $("#track");
-  const NP = 3;
+  const NP = 4;
   let page = 0;
   const scaleNow = () => frame.clientWidth / 640;
 
@@ -889,6 +952,47 @@
     });
   }
 
+  /* ④ voice (Pixie) — simulated assistant states: listen → think → speak → idle */
+  const vSteps=[
+    {ic:"🎤", label:"LISTENING", sub:'say "Jarvis" or tap',  color:"#37e0a1", ring:true },
+    {ic:"💭", label:"THINKING",  sub:"whisper.cpp → Claude",  color:"#ffc24b", ring:false},
+    {ic:"🔊", label:"SPEAKING",  sub:"say · female voice",    color:"#e0885f", ring:true },
+    {ic:"✦",  label:"IDLE",      sub:"tap to talk",           color:"#767c90", ring:false},
+  ];
+  let vIdx=0, vAuto=false, vAutoTO=null;
+  const cap=s=>s[0]+s.slice(1).toLowerCase();
+  function renderVoice(){
+    const s=vSteps[vIdx], orb=$("#vOrb"); if(!orb) return;
+    $("#vIc").textContent=s.ic;
+    const st=$("#vState"); st.textContent=s.label; st.style.color=s.color;
+    $("#vSub").textContent=s.sub;
+    orb.style.setProperty("--vc", s.color);
+    orb.style.borderColor=mixHex(s.color,"#0a0b10",.45);
+    orb.style.boxShadow=`0 0 0 1px #000 inset, 0 0 18px ${s.color}44`;
+    orb.classList.toggle("ring", s.ring && !reduce);
+    document.querySelectorAll("#voiceSegs .seg").forEach((b,i)=>b.setAttribute("aria-pressed", i===vIdx));
+  }
+  function voiceStep(){ vIdx=(vIdx+1)%vSteps.length; renderVoice(); }
+  function initVoice(){
+    const segs=$("#voiceSegs");
+    if(segs){ segs.innerHTML="";
+      vSteps.forEach((s,i)=>{
+        const b=document.createElement("button"); b.className="seg"; b.type="button";
+        b.textContent=`${s.ic} ${cap(s.label)}`; b.setAttribute("aria-pressed", i===vIdx);
+        b.onclick=()=>{ vIdx=i; renderVoice(); }; segs.appendChild(b);
+      });
+    }
+    const orb=$("#vOrb");
+    if(orb){ orb.title="tap to change state"; orb.addEventListener("click",voiceStep); }
+    const cyc=$("#vCycle");
+    if(cyc) cyc.addEventListener("click",e=>{
+      vAuto=!vAuto; e.target.setAttribute("aria-pressed",vAuto);
+      e.target.textContent=vAuto?"⏸ Cycle states":"▶ Cycle states";
+      clearInterval(vAutoTO); if(vAuto) vAutoTO=setInterval(voiceStep,1600);
+    });
+    renderVoice();
+  }
+
   /* navigation — page dots + segmented control + arrow keys + drag-to-swipe */
   let dotsTO;
   function flashDots(){ const d=$("#pagedots"); d.classList.add("show"); clearTimeout(dotsTO); dotsTO=setTimeout(()=>d.classList.remove("show"),1200); }
@@ -919,7 +1023,7 @@
     const wire=(id,key)=>{ const el=$(id); if(el) el.addEventListener("input",e=>{ sys[key]=+e.target.value; lock[key]=true; renderTicker(); }); };
     wire("#simCpu","cpu"); wire("#simRam","ram"); wire("#simDisk","disk");
 
-    initRemote(); posMonitor(); renderTicker(); syncNav(); goTo(0);
+    initRemote(); initVoice(); posMonitor(); renderTicker(); syncNav(); goTo(0);
   }
   initScreens();
 
