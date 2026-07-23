@@ -228,32 +228,46 @@ function win(w) {
 // Ask Claude a one-shot question for the voice assistant (Pixie). Reuses the same
 // OAuth token as the dashboard, so it shares the account rate limit (429 -> brief
 // retry, then surface). Model overridable via PIXIE_MODEL.
+// Rate limits are per-model, so a busy model (429) doesn't mean the account is out.
+// Try Pixie's models in order and fall back on 429 \u2014 Haiku is fast + light, ideal
+// for short voice replies, so it's the natural fallback when Sonnet is throttled.
+const PIXIE_MODELS = process.env.PIXIE_MODEL
+  ? [process.env.PIXIE_MODEL]
+  : ["claude-sonnet-5", "claude-haiku-4-5-20251001"];
+
 async function askClaude(prompt) {
   const token = await readClaudeToken();
   if (!token) throw new Error("not linked");
-  const body = JSON.stringify({
-    model: process.env.PIXIE_MODEL || "claude-sonnet-5",
+  const mkBody = (model) => JSON.stringify({
+    model,
     max_tokens: 300,
     system: "You are Pixie, a concise voice assistant living on a tiny desk display. Answer in the user's language, in 1-3 short spoken sentences. Plain text only \u2014 no markdown, lists, or code.",
     messages: [{ role: "user", content: String(prompt).slice(0, 2000) }],
   });
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "anthropic-beta": "oauth-2025-04-20",
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-        "User-Agent": UA,
-      },
-      body,
-    });
-    if (res.ok) { const j = await res.json(); return (j?.content?.[0]?.text || "").trim(); }
-    if (res.status === 429 && attempt < 2) { await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); continue; }
-    throw new Error(`claude ${res.status}`);
+  let lastStatus = 0;
+  for (const model of PIXIE_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "anthropic-beta": "oauth-2025-04-20",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "User-Agent": UA,
+        },
+        body: mkBody(model),
+      });
+      if (res.ok) { const j = await res.json(); return (j?.content?.[0]?.text || "").trim(); }
+      lastStatus = res.status;
+      if (res.status === 429) {
+        if (attempt === 0) { await new Promise((r) => setTimeout(r, 1200)); continue; }  // brief retry
+        break;   // still throttled on this model -> try the next model
+      }
+      throw new Error(`claude ${res.status}`);   // non-429 -> real error
+    }
   }
-  throw new Error("claude unavailable");
+  throw new Error(`claude ${lastStatus || "unavailable"}`);
 }
 
 // Last-known-good Claude fields. The Anthropic usage endpoint is rate-limited
