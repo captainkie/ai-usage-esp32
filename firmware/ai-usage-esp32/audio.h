@@ -19,8 +19,8 @@ static esp_codec_dev_handle_t g_playback = NULL;
 static esp_codec_dev_handle_t g_record   = NULL;
 static esp_io_expander_handle_t g_io_expander = NULL;
 
-// Enable the speaker amplifier via the TCA9554 IO expander (pin 7 high) — without
-// this the ES8311 plays but nothing reaches the speaker.
+// Set up the speaker-amp enable line (TCA9554 pin 7). Without the amp on the
+// ES8311 plays but nothing reaches the speaker.
 static bool audio_amp_enable() {
   i2c_master_bus_handle_t bus = NULL;
   if (i2c_master_get_bus_handle(0, &bus) != ESP_OK) return false;
@@ -28,6 +28,13 @@ static bool audio_amp_enable() {
   esp_io_expander_set_dir(g_io_expander, IO_EXPANDER_PIN_NUM_7, IO_EXPANDER_OUTPUT);
   esp_io_expander_set_level(g_io_expander, IO_EXPANDER_PIN_NUM_7, 1);
   return true;
+}
+
+// Toggle the speaker amp. Turn it OFF while recording — an always-on amp hums a
+// constant tone into the ES7210 mic (whisper hears "[music]", not speech) — and
+// back ON just before playback.
+static void audio_amp(bool on) {
+  if (g_io_expander) esp_io_expander_set_level(g_io_expander, IO_EXPANDER_PIN_NUM_7, on ? 1 : 0);
 }
 
 // Bring up the codec once. Safe to call after the display/i2c are up.
@@ -45,8 +52,8 @@ static bool audio_init() {
   g_record   = get_record_handle();
   if (!g_playback || !g_record) return false;
 
-  esp_codec_dev_set_out_vol(g_playback, 80.0);   // speaker volume 0..100
-  esp_codec_dev_set_in_gain(g_record, 35.0);     // mic gain (dB-ish, per BSP)
+  esp_codec_dev_set_out_vol(g_playback, 95.0);   // speaker volume 0..100
+  esp_codec_dev_set_in_gain(g_record, 35.0);     // mic gain — 35 captured cleanly; 40 amplified noise
   esp_codec_dev_sample_info_t fs = {};
   fs.sample_rate     = AUDIO_RATE;
   fs.channel         = AUDIO_CHANNELS;

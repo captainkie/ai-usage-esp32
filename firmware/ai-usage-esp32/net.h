@@ -80,6 +80,10 @@ static void net_portal() {
 
 static const char *net_bridge_desc() { return g_bridge_desc; }
 
+// Set true to request one voice turn (from a "@VOICE" serial line or a touch);
+// drained in loop() which calls voice_ask(). Declared here so net_usb_read can set it.
+static volatile bool g_voice_trigger = false;
+
 static void parse_window(JsonVariantConst w, Window *dst) {
   if (w.isNull()) { dst->util = -1; dst->reset_in = -1; return; }
   dst->util     = w["util"]     | -1;
@@ -175,7 +179,8 @@ static bool net_usb_read(UsageState *out) {
         got = parse_usage_body(buf, out);
         if (!got) Serial.printf("[usb] parse fail len=%u\n", (unsigned)len);
       } else if (len > 0) {
-        Serial.printf("[usb] non-json len=%u first=%d\n", (unsigned)len, (int)buf[0]);
+        buf[len] = '\0';
+        if (strcmp(buf, "@VOICE") == 0) g_voice_trigger = true;   // test/remote push-to-talk
       }
       len = 0;
       if (got) return true;

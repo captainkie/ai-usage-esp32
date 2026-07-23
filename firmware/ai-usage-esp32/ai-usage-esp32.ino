@@ -26,6 +26,7 @@
 #include "mascot.h"
 #include "net.h"
 #include "audio.h"
+#include "voice.h"
 
 // Exposed by the small lvgl_port patch (see firmware/README.md).
 extern "C" bool aiusage_lvgl_lock(int timeout_ms);
@@ -728,6 +729,13 @@ void loop() {
   if (g_action >= 0) {
     int a = g_action; g_action = -1;
     if (!net_action(ACTION_BODY[a])) Serial.printf("[action] %d failed\n", a);
+  }
+
+  // Drain a voice request (from a "@VOICE" serial line or a touch): record ->
+  // POST /voice -> play the reply. Blocking, but outside the LVGL lock.
+  if (g_voice_trigger) {
+    g_voice_trigger = false;
+    voice_ask();
   }
 
   // Long-press the AI-USAGE brand -> reopen the setup portal (outside LVGL lock).
