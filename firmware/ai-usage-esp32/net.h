@@ -187,22 +187,34 @@ static bool net_usb_read(UsageState *out) {
   return false;
 }
 
-// POST one allowlisted action to /action with the pairing token injected.
-// `body` is one of ACTION_BODY[] (config.h). Returns true on HTTP 200 {ok:true}.
+// Send one allowlisted action with the pairing token injected.
+// `body` is one of ACTION_BODY[] (config.h). Prefers Wi-Fi (POST /action); when
+// Wi-Fi isn't connected (e.g. carried to an office where the board can't join),
+// falls back to the **USB serial** link — the bridge reads `@ACT <token> <body>`
+// lines from the port, so the Remote works over the cable with no Wi-Fi.
 // MUST be called from the network task (loop()), never inside an LVGL callback.
 static bool net_action(const char *body) {
-  if (WiFi.status() != WL_CONNECTED || g_host.length() == 0) return false;
   if (g_token.length() == 0) return false;                      // not paired yet
-  // Splice the token into the body: {"token":"...",<body without leading '{'>
-  String payload = String("{\"token\":\"") + g_token + "\"," + (body + 1);
-  String url = "http://" + g_host + ":" + g_port + "/action";
-  HTTPClient http;
-  http.setConnectTimeout(HTTP_TIMEOUT_MS);
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  if (!http.begin(url)) return false;
-  http.addHeader("Content-Type", "application/json");
-  int code = http.POST(payload);
-  http.end();
-  if (code != 200) Serial.printf("[action] POST -> HTTP %d (token len %d)\n", code, (int)g_token.length());
-  return code == 200;
+
+  // Wi-Fi path: POST /action when connected + a bridge IP is set.
+  if (WiFi.status() == WL_CONNECTED && g_host.length() > 0) {
+    // Splice the token into the body: {"token":"...",<body without leading '{'>
+    String payload = String("{\"token\":\"") + g_token + "\"," + (body + 1);
+    String url = "http://" + g_host + ":" + g_port + "/action";
+    HTTPClient http;
+    http.setConnectTimeout(HTTP_TIMEOUT_MS);
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    if (http.begin(url)) {
+      http.addHeader("Content-Type", "application/json");
+      int code = http.POST(payload);
+      http.end();
+      if (code == 200) return true;
+      Serial.printf("[action] POST -> HTTP %d (token len %d)\n", code, (int)g_token.length());
+      // fall through to USB in case the bridge is reachable over the cable
+    }
+  }
+
+  // USB fallback: the bridge reads `@ACT <token> <body>` lines off the serial port.
+  Serial.printf("@ACT %s %s\n", g_token.c_str(), body);
+  return true;   // fire-and-forget; the bridge validates + executes locally
 }

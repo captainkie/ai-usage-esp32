@@ -203,6 +203,9 @@ static void screen_usage_build(lv_obj_t *parent) {
   lv_obj_set_style_text_color(lblBrand, LVC(COL_CLAY), 0);
   lv_obj_set_style_text_font(lblBrand, &lv_font_montserrat_14, 0);
   lv_obj_set_pos(lblBrand, 12, 9);
+  // Long-press the brand on screen ① too (parity with ②③) to reopen the setup portal.
+  lv_obj_add_flag(lblBrand, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(lblBrand, brand_cb, LV_EVENT_LONG_PRESSED, NULL);
 
   lblModel = lv_label_create(parent);
   lv_label_set_text(lblModel, "--");
