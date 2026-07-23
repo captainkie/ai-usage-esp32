@@ -176,6 +176,11 @@ static void build_topbar(lv_obj_t *parent, const char *title) {
   lv_obj_set_style_text_color(lv, LVC(COL_LIVE), 0);
   lv_obj_set_style_text_font(lv, &lv_font_montserrat_14, 0);
   lv_obj_align(lv, LV_ALIGN_TOP_RIGHT, -8, 9);
+  // Tap the LIVE / Wi-Fi indicator to (re)open the setup portal — one tap, no
+  // long-press (which the tileview swallowed as a swipe).
+  lv_obj_add_flag(lv, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_ext_click_area(lv, 12);
+  lv_obj_add_event_cb(lv, brand_cb, LV_EVENT_CLICKED, NULL);
 }
 
 // A 270° meter arc styled exactly like the screen ① gauges.
@@ -229,6 +234,10 @@ static void screen_usage_build(lv_obj_t *parent) {
   lv_obj_set_style_text_color(lblLive, LVC(COL_LIVE), 0);
   lv_obj_set_style_text_font(lblLive, &lv_font_montserrat_14, 0);
   lv_obj_align(lblLive, LV_ALIGN_TOP_RIGHT, -8, 9);
+  // Tap the LIVE / Wi-Fi indicator to (re)open the setup portal (one tap).
+  lv_obj_add_flag(lblLive, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_ext_click_area(lblLive, 12);
+  lv_obj_add_event_cb(lblLive, brand_cb, LV_EVENT_CLICKED, NULL);
 
   // gauges -- default lv_arc is a 270° meter with the gap at the bottom
   const int R = 44;
