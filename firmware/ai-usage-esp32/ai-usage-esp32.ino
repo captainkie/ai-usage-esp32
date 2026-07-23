@@ -102,10 +102,10 @@ static void mascot_cb(lv_event_t *e) {
 /* ---------------- remote action queue (LVGL tap -> net task) ---------------- */
 // Short on-screen confirmations, indexed by ACT_* (see config.h).
 static const char *ACTION_TOAST[ACT_COUNT] = {
-  "YouTube", "Music", "Safari", "Focus",
+  "YouTube", "Music", "Safari", "Claude",
   "Prev", "Play/Pause", "Next",
   "Volume -", "Mute", "Volume +",
-  "Lock screen", "Display sleep",
+  "Lock screen", "Screen off",
 };
 
 // Reveal a brief confirmation. g_token lives in net.h (same translation unit),
