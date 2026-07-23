@@ -125,3 +125,29 @@ writes, no telemetry, no third parties.
 
 - Node.js ≥ 18 (you already have it — Claude Code runs on Node).
 - A signed-in Claude Code on the same Mac.
+
+## Voice (Pixie) — `POST /voice`
+
+Pixie's voice assistant. The device records a spoken question and POSTs the WAV
+here; the bridge transcribes it **locally**, asks Claude, speaks the answer, and
+returns the audio. **All speech stays on your Mac** — free + local (whisper.cpp +
+macOS `say`).
+
+**One-time setup:**
+```sh
+brew install whisper-cpp
+mkdir -p ~/.config/ai-usage-bridge/models
+curl -L -o ~/.config/ai-usage-bridge/models/ggml-base.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
+```
+`say` (TTS) is built into macOS; replies use a female voice — **Kanya** for Thai,
+**Samantha** otherwise.
+
+**Endpoint:** `POST /voice` — header `X-Pixie-Token: <pairing token>`, body = a
+16 kHz mono WAV. On success returns `200 audio/wav` with URL-encoded `X-Transcript`
++ `X-Reply` headers; errors are `401` (bad token), `422` (no speech), `500` (pipeline).
+
+> **Rate limits:** the voice brain calls Claude with the same OAuth token as the
+> dashboard, so it shares your account's rate limit — a busy account can answer
+> `claude 429`. Multi-provider fallback (GPT / Gemini / …) is on the roadmap to
+> sidestep this. Override the model with `PIXIE_MODEL` (default `claude-sonnet-5`).

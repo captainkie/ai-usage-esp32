@@ -14,7 +14,7 @@
 import http from "node:http";
 import https from "node:https";
 import { execFile, execFileSync } from "node:child_process";
-import { readFile, readdir, stat, open } from "node:fs/promises";
+import { readFile, readdir, stat, open, mkdtemp, writeFile } from "node:fs/promises";
 import { existsSync, openSync, writeSync, closeSync, readdirSync, readFileSync, writeFileSync, mkdirSync, createReadStream } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +22,7 @@ import path from "node:path";
 import { readSystem } from "./lib/system.mjs";
 import { loadOrCreateToken, tokensMatch } from "./lib/pairing.mjs";
 import { loadActionsConfig, validateAction, parseUsbAction } from "./lib/actions.mjs";
+import { handleVoice, NoSpeech } from "./lib/voice.mjs";
 import { advertise } from "./lib/mdns.mjs";
 // note: execFile is already imported from "node:child_process" above.
 
@@ -224,6 +225,51 @@ function win(w) {
   return { util: num(w.utilization), resets_at: w.resets_at ?? null, reset_in: secsUntil(w.resets_at) };
 }
 
+// Ask Claude a one-shot question for the voice assistant (Pixie). Reuses the same
+// OAuth token as the dashboard, so it shares the account rate limit (429 -> brief
+// retry, then surface). Model overridable via PIXIE_MODEL.
+// Rate limits are per-model, so a busy model (429) doesn't mean the account is out.
+// Try Pixie's models in order and fall back on 429 \u2014 Haiku is fast + light, ideal
+// for short voice replies, so it's the natural fallback when Sonnet is throttled.
+const PIXIE_MODELS = process.env.PIXIE_MODEL
+  ? [process.env.PIXIE_MODEL]
+  : ["claude-sonnet-5", "claude-haiku-4-5-20251001"];
+
+async function askClaude(prompt) {
+  const token = await readClaudeToken();
+  if (!token) throw new Error("not linked");
+  const mkBody = (model) => JSON.stringify({
+    model,
+    max_tokens: 300,
+    system: "You are Pixie, a concise voice assistant living on a tiny desk display. Answer in the user's language, in 1-3 short spoken sentences. Plain text only \u2014 no markdown, lists, or code.",
+    messages: [{ role: "user", content: String(prompt).slice(0, 2000) }],
+  });
+  let lastStatus = 0;
+  for (const model of PIXIE_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "anthropic-beta": "oauth-2025-04-20",
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "User-Agent": UA,
+        },
+        body: mkBody(model),
+      });
+      if (res.ok) { const j = await res.json(); return (j?.content?.[0]?.text || "").trim(); }
+      lastStatus = res.status;
+      if (res.status === 429) {
+        if (attempt === 0) { await new Promise((r) => setTimeout(r, 1200)); continue; }  // brief retry
+        break;   // still throttled on this model -> try the next model
+      }
+      throw new Error(`claude ${res.status}`);   // non-429 -> real error
+    }
+  }
+  throw new Error(`claude ${lastStatus || "unavailable"}`);
+}
+
 // Last-known-good Claude fields. The Anthropic usage endpoint is rate-limited
 // (429) — and it's shared with the ai-usage-bar menu-bar app on the same token —
 // so a poll can transiently fail. Rather than emit nulls (which blanks the
@@ -316,6 +362,38 @@ const server = http.createServer(async (req, res) => {
       if (!v.ok) return reply(400, v);
       execFile(v.cmd.file, v.cmd.args, { timeout: 5000 }, (e) =>
         e ? reply(500, { ok: false, error: "action failed" }) : reply(200, { ok: true }));
+    });
+    return;
+  }
+
+  if (url === "/voice") {
+    if (req.method !== "POST") return send(res, 405, { ok: false, error: "POST only" });
+    if (!tokensMatch(req.headers["x-pixie-token"] || "", PAIR_TOKEN))
+      return send(res, 401, { ok: false, error: "unauthorized" });
+    const chunks = []; let size = 0; let tooBig = false;
+    req.on("error", () => {});
+    req.on("data", (d) => { size += d.length; if (size > 4_000_000) { tooBig = true; req.destroy(); } else chunks.push(d); });
+    req.on("end", async () => {
+      if (tooBig) return send(res, 413, { ok: false, error: "too large" });
+      try {
+        const dir = await mkdtemp(path.join(os.tmpdir(), "pixie-"));
+        const inWav = path.join(dir, "in.wav");
+        const outWav = path.join(dir, "out.wav");
+        await writeFile(inWav, Buffer.concat(chunks));
+        const { transcript, reply } = await handleVoice(inWav, askClaude, outWav);
+        const audio = await readFile(outWav);
+        res.writeHead(200, {
+          "Content-Type": "audio/wav",
+          "Content-Length": audio.length,
+          "X-Transcript": encodeURIComponent(transcript),
+          "X-Reply": encodeURIComponent(reply),
+          "Cache-Control": "no-store",
+        });
+        res.end(audio);
+      } catch (e) {
+        if (e instanceof NoSpeech) return send(res, 422, { ok: false, error: "no speech" });
+        send(res, 500, { ok: false, error: e.message });
+      }
     });
     return;
   }
