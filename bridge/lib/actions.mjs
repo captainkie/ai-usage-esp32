@@ -18,6 +18,21 @@ const MEDIA = {
   prev:      osa('tell application "Music" to previous track'),
 };
 
+// Parse an inbound USB line from the device. The Remote sends actions as
+// `@ACT <token> <json>` so it can drive the Mac over the USB cable with no Wi-Fi.
+// Returns { token, body } or null. Pure — the caller checks the token + validates.
+export function parseUsbAction(line) {
+  if (typeof line !== "string" || !line.startsWith("@ACT ")) return null;
+  const rest = line.slice(5).trimStart();
+  const sp = rest.indexOf(" ");
+  if (sp < 0) return null;
+  const token = rest.slice(0, sp);
+  if (!token) return null;
+  let body;
+  try { body = JSON.parse(rest.slice(sp + 1)); } catch { return null; }
+  return { token, body };
+}
+
 // Returns { ok:true, cmd:{file,args} } or { ok:false, error }.
 export function validateAction(body, cfg) {
   const a = body && body.action;
@@ -38,8 +53,14 @@ export function validateAction(body, cfg) {
     case "volume":
       return VOL[body.dir] ? { ok: true, cmd: VOL[body.dir] } : { ok: false, error: "bad volume dir" };
     case "lock":
-      return { ok: true, cmd: osa('tell application "System Events" to keystroke "q" using {control down, command down}') };
+      // Start the screen saver — locks the Mac WITHOUT needing Accessibility
+      // permission (unlike a Ctrl-Cmd-Q keystroke), provided "Require password
+      // after screen saver begins" is on (System Settings → Lock Screen). The Mac
+      // stays awake, so Claude keeps running and the Remote still works.
+      return { ok: true, cmd: { file: "open", args: ["-a", "ScreenSaverEngine"] } };
     case "display_sleep":
+      // Turn the display OFF but keep the Mac awake (Claude keeps running, Remote
+      // still works). This is the "SCREEN" button, not a system sleep.
       return { ok: true, cmd: { file: "pmset", args: ["displaysleepnow"] } };
     default:
       return { ok: false, error: "unknown action" };

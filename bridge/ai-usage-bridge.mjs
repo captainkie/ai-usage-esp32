@@ -13,15 +13,15 @@
 
 import http from "node:http";
 import https from "node:https";
-import { execFile, execSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { readFile, readdir, stat, open, mkdtemp, writeFile } from "node:fs/promises";
-import { existsSync, openSync, writeSync, closeSync, readdirSync } from "node:fs";
+import { existsSync, openSync, writeSync, closeSync, readdirSync, readFileSync, writeFileSync, mkdirSync, createReadStream } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { readSystem } from "./lib/system.mjs";
 import { loadOrCreateToken, tokensMatch } from "./lib/pairing.mjs";
-import { loadActionsConfig, validateAction } from "./lib/actions.mjs";
+import { loadActionsConfig, validateAction, parseUsbAction } from "./lib/actions.mjs";
 import { handleVoice, NoSpeech } from "./lib/voice.mjs";
 import { advertise } from "./lib/mdns.mjs";
 // note: execFile is already imported from "node:child_process" above.
@@ -278,6 +278,22 @@ async function askClaude(prompt) {
 let lastGoodClaude = { model: null, effort: null, five_hour: null, seven_day: null };
 let lastGoodAt = 0;
 
+// Persist last-known-good to disk so a bridge *restart* (or a cold start during a
+// 429) still shows the last real reading instead of blanking to "no live data".
+const LAST_GOOD_PATH = path.join(HOME, ".config", "ai-usage-bridge", "last-good.json");
+(function loadLastGood() {
+  try {
+    const o = JSON.parse(readFileSync(LAST_GOOD_PATH, "utf8"));
+    if (o && o.claude) { lastGoodClaude = { ...lastGoodClaude, ...o.claude }; lastGoodAt = o.at || 0; }
+  } catch { /* no file yet — fine */ }
+})();
+function saveLastGood() {
+  try {
+    mkdirSync(path.dirname(LAST_GOOD_PATH), { recursive: true });
+    writeFileSync(LAST_GOOD_PATH, JSON.stringify({ claude: lastGoodClaude, at: lastGoodAt }));
+  } catch { /* best-effort */ }
+}
+
 async function buildPayload() {
   const providers = {
     claude: { name: "Claude", linked: false, model: null, effort: null, five_hour: null, seven_day: null },
@@ -311,7 +327,7 @@ async function buildPayload() {
       if (c[k] == null) c[k] = lastGoodClaude[k];
       else { lastGoodClaude[k] = c[k]; fresh = true; }
     }
-    if (fresh) lastGoodAt = Date.now();
+    if (fresh) { lastGoodAt = Date.now(); saveLastGood(); }
     if (c.five_hour || c.model) delete c.error;   // we have something real to show
   }
 
@@ -419,26 +435,46 @@ function detectUsbPort() {
   } catch { return null; }
 }
 
+// Bidirectional USB: push /usage frames to the device AND read Remote actions back
+// from it (`@ACT` lines), so the Remote works over the cable with no Wi-Fi.
 function startUsbWriter() {
   const port = detectUsbPort();
   if (!port) return;
-  let fd = null;
+  let fd = null, rs = null, buf = "";
+  const close = () => {
+    try { if (rs) rs.destroy(); } catch { /* ignore */ }
+    try { if (fd !== null) closeSync(fd); } catch { /* ignore */ }
+    fd = null; rs = null; buf = "";
+  };
+  const onLine = (line) => {
+    const p = parseUsbAction(line.trim());
+    if (!p) return;
+    if (!REMOTE_ENABLED || !tokensMatch(p.token, PAIR_TOKEN)) return;
+    const v = validateAction(p.body, loadActionsConfig(ACTIONS_PATH));
+    if (!v.ok) return;
+    execFile(v.cmd.file, v.cmd.args, { timeout: 5000 }, () => {});   // fire-and-forget
+  };
   const openPort = () => {
     try {
-      execSync(`stty -f ${port} 115200 raw`);        // raw mode (CDC baud is virtual)
-      fd = openSync(port, "w");
-      console.log(`  usb: pushing frames to ${port} (set USB=0 to disable)`);
-    } catch { fd = null; }
+      execFileSync("stty", ["-f", port, "115200", "raw", "-echo"]);   // raw; no shell (injection-safe)
+      fd = openSync(port, "r+");                        // read + write
+      rs = createReadStream(null, { fd, autoClose: false });
+      rs.on("data", (chunk) => {
+        buf += chunk.toString("utf8");
+        let i;
+        while ((i = buf.indexOf("\n")) >= 0) { onLine(buf.slice(0, i)); buf = buf.slice(i + 1); }
+        if (buf.length > 8192) buf = "";                 // runaway guard
+      });
+      rs.on("error", close);
+      console.log(`  usb: bridge on ${port} — frames out + Remote actions in (set USB=0 to disable)`);
+    } catch { close(); }
   };
   openPort();
   const tick = async () => {
     try {
       if (fd === null) { openPort(); if (fd === null) return; }
       writeSync(fd, JSON.stringify(await currentPayload()) + "\n");
-    } catch {
-      try { if (fd !== null) closeSync(fd); } catch { /* ignore */ }
-      fd = null;   // device may have re-enumerated; reopen next tick
-    }
+    } catch { close(); }   // device may have re-enumerated; reopen next tick
   };
   tick();
   setInterval(tick, 12_000);

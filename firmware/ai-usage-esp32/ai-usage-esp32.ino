@@ -102,10 +102,10 @@ static void mascot_cb(lv_event_t *e) {
 /* ---------------- remote action queue (LVGL tap -> net task) ---------------- */
 // Short on-screen confirmations, indexed by ACT_* (see config.h).
 static const char *ACTION_TOAST[ACT_COUNT] = {
-  "YouTube", "Music", "Safari", "Focus",
+  "YouTube", "Music", "Safari", "Claude",
   "Prev", "Play/Pause", "Next",
   "Volume -", "Mute", "Volume +",
-  "Lock screen", "Display sleep",
+  "Lock screen", "Screen off",
 };
 
 // Reveal a brief confirmation. g_token lives in net.h (same translation unit),
@@ -176,6 +176,11 @@ static void build_topbar(lv_obj_t *parent, const char *title) {
   lv_obj_set_style_text_color(lv, LVC(COL_LIVE), 0);
   lv_obj_set_style_text_font(lv, &lv_font_montserrat_14, 0);
   lv_obj_align(lv, LV_ALIGN_TOP_RIGHT, -8, 9);
+  // Tap the LIVE / Wi-Fi indicator to (re)open the setup portal — one tap, no
+  // long-press (which the tileview swallowed as a swipe).
+  lv_obj_add_flag(lv, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_ext_click_area(lv, 12);
+  lv_obj_add_event_cb(lv, brand_cb, LV_EVENT_CLICKED, NULL);
 }
 
 // A 270° meter arc styled exactly like the screen ① gauges.
@@ -203,6 +208,9 @@ static void screen_usage_build(lv_obj_t *parent) {
   lv_obj_set_style_text_color(lblBrand, LVC(COL_CLAY), 0);
   lv_obj_set_style_text_font(lblBrand, &lv_font_montserrat_14, 0);
   lv_obj_set_pos(lblBrand, 12, 9);
+  // Long-press the brand on screen ① too (parity with ②③) to reopen the setup portal.
+  lv_obj_add_flag(lblBrand, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(lblBrand, brand_cb, LV_EVENT_LONG_PRESSED, NULL);
 
   lblModel = lv_label_create(parent);
   lv_label_set_text(lblModel, "--");
@@ -226,6 +234,10 @@ static void screen_usage_build(lv_obj_t *parent) {
   lv_obj_set_style_text_color(lblLive, LVC(COL_LIVE), 0);
   lv_obj_set_style_text_font(lblLive, &lv_font_montserrat_14, 0);
   lv_obj_align(lblLive, LV_ALIGN_TOP_RIGHT, -8, 9);
+  // Tap the LIVE / Wi-Fi indicator to (re)open the setup portal (one tap).
+  lv_obj_add_flag(lblLive, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_ext_click_area(lblLive, 12);
+  lv_obj_add_event_cb(lblLive, brand_cb, LV_EVENT_CLICKED, NULL);
 
   // gauges -- default lv_arc is a 270° meter with the gap at the bottom
   const int R = 44;
@@ -357,7 +369,7 @@ static void screen_remote_build(lv_obj_t *parent) {
     { LV_SYMBOL_VIDEO, "YouTube", ACT_YT     },
     { LV_SYMBOL_AUDIO, "Music",   ACT_MUSIC  },
     { LV_SYMBOL_GPS,   "Safari",  ACT_SAFARI },
-    { LV_SYMBOL_BELL,  "Focus",   ACT_FOCUS  },
+    { LV_SYMBOL_EDIT,  "Claude",  ACT_FOCUS  },
   };
   const int tW = 144, tY = 31, tH = 56, gap = 10;
   for (int i = 0; i < 4; i++) {
@@ -394,7 +406,7 @@ static void screen_remote_build(lv_obj_t *parent) {
     { LV_SYMBOL_MUTE,       ACT_VOL_MUTE,  267, 36, false },
     { LV_SYMBOL_VOLUME_MAX, ACT_VOL_UP,    316, 36, false },
     { "LOCK",               ACT_LOCK,      420, 84, false },
-    { "SLEEP",              ACT_SLEEP,     514, 84, false },
+    { "SCREEN",             ACT_SLEEP,     514, 84, false },
   };
   for (int i = 0; i < 8; i++) {
     lv_obj_t *b = lv_btn_create(parent);

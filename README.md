@@ -62,16 +62,16 @@ same 640×172 gauge language:
 - **② Mac Monitor** — live **CPU · RAM · Disk** meters, plus network I/O, battery,
   temperature, and the top resource-hungry processes.
 - **③ Mac Remote** — one-tap **shortcuts** (open YouTube / apps), **media** transport,
-  **volume**, and **lock / sleep** — the device drives your Mac through the bridge
+  **volume**, and **lock / screen** — the device drives your Mac through the bridge
   (allowlisted + paired, never a free-for-all).
 
 <img src="design/previews/screen-monitor.png" width="640" alt="Mac Monitor screen — CPU 34% green, RAM 66% amber, Disk 88% red arc gauges, with a network / battery / temperature / top-process ticker" />
 
 <sub>**② Mac Monitor** — CPU · RAM · Disk as traffic-light arcs, plus network I/O, battery, temperature, and the top process.</sub>
 
-<img src="design/previews/screen-remote.png" width="640" alt="Mac Remote screen — YouTube / Music / Safari / Focus shortcut tiles, media transport, volume bar, and lock / sleep buttons" />
+<img src="design/previews/screen-remote.png" width="640" alt="Mac Remote screen — YouTube / Music / Safari / Claude shortcut tiles, media transport, volume bar, and lock / screen buttons" />
 
-<sub>**③ Mac Remote** — shortcuts (open YouTube / apps), media transport, volume, and lock / sleep — driven over the bridge.</sub>
+<sub>**③ Mac Remote** — shortcuts (open YouTube / apps, or Claude), media transport, volume, and lock / screen — driven over the bridge.</sub>
 
 ▶ **[Play with all three in the live demo →](https://captainkie.github.io/ai-usage-esp32/design/mockup.html)** — swipe, scrub the meters, tap the remote.
 
@@ -153,16 +153,18 @@ That's it — `● 5h 18%  wk 57%` glowing on your desk, with a cat.
 
 The remote's tiles are allowlisted in `~/.config/ai-usage-bridge/actions.json`
 (`apps` / `urls` / `shortcuts`) — edit that file to change what any tile does; all
-tiles are configurable. Two tiles need a little extra macOS setup:
+tiles are configurable. Two tiles are worth a note:
 
-- **LOCK** needs **Accessibility** permission for whatever runs the bridge
-  (System Settings → Privacy & Security → Accessibility).
-- **Focus** runs a macOS Shortcut named **"Focus"** — create one, or remap that
-  tile to any other action in `actions.json`.
+- **LOCK** starts the macOS **screen saver** (`open -a ScreenSaverEngine`) — **no
+  Accessibility permission needed**. For it to actually lock, turn on **Require
+  password after screen saver begins** (System Settings → Lock Screen). The Mac
+  stays awake, so Claude keeps running and the Remote keeps working.
+- **Claude** opens **https://claude.ai** out of the box — no macOS Shortcut needed
+  (the old **Focus** tile required a user-made Shortcut).
 
 ### Moving between networks (home ↔ office)
 
-**Long-press the `AI•USAGE` brand text** (top-left of the screen) for ~1s to reopen
+**Tap the LIVE indicator** (the Wi-Fi indicator, top-right of any screen) to reopen
 the setup portal — change Wi-Fi or update the token, no reflashing needed.
 
 The ESP32 can't join **WPA2-Enterprise** or captive-portal corporate Wi-Fi. On a
@@ -170,13 +172,16 @@ restrictive office network you have two tether-free options:
 
 - **USB (no network at all):** keep the device plugged into your Mac over USB and
   run the bridge — it **auto-detects the USB port** and pushes updates over the
-  cable (no Wi-Fi, no pairing). Set `USB=0` to disable, or `USB_PORT=/dev/cu.…` to
+  cable, and **carries Remote actions back** too, so screen ③ still drives your Mac
+  (no Wi-Fi, no pairing). Set `USB=0` to disable, or `USB_PORT=/dev/cu.…` to
   pin it. Perfect for carrying one device between home and office.
 - **Phone hotspot (2.4GHz):** a Wi-Fi fallback if you'd rather stay wireless.
 
 > If Anthropic's usage endpoint transiently rate-limits (HTTP 429 — it shares your
 > token with the menu-bar app), the bridge serves the **last-known-good** reading,
-> so the display never flickers to "no live data".
+> so the display never flickers to "no live data". It now **persists last-known-good
+> to disk** (`~/.config/ai-usage-bridge/last-good.json`), so even a bridge restart —
+> or a cold start during a 429 — shows your last real reading instead of blanking.
 
 ## The companions
 
@@ -204,8 +209,13 @@ Full notes + driver rationale in **[esp32/HARDWARE.md](esp32/HARDWARE.md)**.
 ## Roadmap
 
 - **USB-serial transport** *(available)* — runs tether-free over the USB cable it's
-  already powered by; no Wi-Fi or pairing needed. Auto-detected by the bridge — ideal
-  for carrying a single device between home and office.
+  already powered by; no Wi-Fi or pairing needed. Auto-detected by the bridge, and now
+  **bidirectional** — it carries live data to the device **and Remote actions back**.
+  Ideal for carrying a single device between home and office.
+- **Seamless connectivity** *(in progress / planned)* — auto-join multiple saved
+  networks (WiFiMulti: home / office / hotspot), auto-discover the Mac via mDNS (no
+  typing its IP), and a TF-card config file — so switching between locations
+  needs no re-typing at all.
 - **Bluetooth (BLE) transport** *(planned)* — a wireless, network-free link to the Mac.
 - **Voice AI assistant — "Pixie"** *(Phase 1 in progress)* — say **"Jarvis"** or tap → ask → Pixie
   speaks Claude's answer, with STT + TTS free + local on your Mac. The board's dual-mic array + audio
