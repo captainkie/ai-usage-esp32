@@ -25,6 +25,7 @@
 #include "config.h"
 #include "mascot.h"
 #include "net.h"
+#include "audio.h"
 
 // Exposed by the small lvgl_port patch (see firmware/README.md).
 extern "C" bool aiusage_lvgl_lock(int timeout_ms);
@@ -691,6 +692,9 @@ void setup() {
     lv_timer_create(render_cb, RENDER_INTERVAL_MS, NULL);
     aiusage_lvgl_unlock();
   }
+
+  // Bring up mic + speaker (Pixie voice). Non-fatal if it fails — dashboard runs.
+  Serial.println(audio_init() ? "[audio] codec ready (mic+speaker)" : "[audio] codec init FAILED");
 }
 
 void loop() {
