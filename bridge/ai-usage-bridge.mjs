@@ -23,6 +23,7 @@ import { readSystem } from "./lib/system.mjs";
 import { loadOrCreateToken, tokensMatch } from "./lib/pairing.mjs";
 import { loadActionsConfig, validateAction, parseUsbAction } from "./lib/actions.mjs";
 import { handleVoice, NoSpeech } from "./lib/voice.mjs";
+import { askLLM, providerList, setActiveProvider } from "./lib/voice-providers.mjs";
 import { advertise } from "./lib/mdns.mjs";
 // note: execFile is already imported from "node:child_process" above.
 
@@ -397,7 +398,7 @@ const server = http.createServer(async (req, res) => {
         const inWav = path.join(dir, "in.wav");
         const outWav = path.join(dir, "out.wav");
         await writeFile(inWav, Buffer.concat(chunks));
-        const { transcript, reply } = await handleVoice(inWav, askClaude, outWav);
+        const { transcript, reply } = await handleVoice(inWav, (p) => askLLM(p, askClaude), outWav);
         const audio = await readFile(outWav);
         res.writeHead(200, {
           "Content-Type": "audio/wav",
@@ -411,6 +412,25 @@ const server = http.createServer(async (req, res) => {
         if (e instanceof NoSpeech) return send(res, 422, { ok: false, error: "no speech" });
         send(res, 500, { ok: false, error: e.message });
       }
+    });
+    return;
+  }
+
+  // Voice providers: list (open) + switch the active one (token-gated).
+  if (url === "/voice/providers") {
+    return send(res, 200, { ok: true, ...providerList() });
+  }
+  if (url === "/voice/provider") {
+    if (req.method !== "POST") return send(res, 405, { ok: false, error: "POST only" });
+    if (!tokensMatch(req.headers["x-pixie-token"] || "", PAIR_TOKEN))
+      return send(res, 401, { ok: false, error: "unauthorized" });
+    let raw = "";
+    req.on("data", (d) => { raw += d; if (raw.length > 1024) req.destroy(); });
+    req.on("end", () => {
+      let id; try { id = JSON.parse(raw || "{}").id; } catch { return send(res, 400, { ok: false, error: "bad json" }); }
+      const now = setActiveProvider(String(id || ""));
+      if (!now) return send(res, 400, { ok: false, error: "unknown provider" });
+      send(res, 200, { ok: true, active: now });
     });
     return;
   }
