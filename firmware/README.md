@@ -8,7 +8,7 @@ Renders three swipe-navigated screens on the 640×172 AXS15231B panel, fed by th
 2. **② Mac Monitor** — CPU / RAM / Disk gauges (same traffic-light colours) plus a
    net / battery / temperature ticker.
 3. **③ Mac Remote** — tap to open apps/URLs, run a Shortcut, control media/volume,
-   or lock / sleep the Mac.
+   or lock / screen the Mac.
 
 **Swipe left/right** to move between screens; three page dots flash to show where
 you are. Screens ② and ③ need the bridge's `system` block and `POST /action`
@@ -106,9 +106,9 @@ re-implementing the driver. You drop these files into a copy of their
    Save.
 3. It reconnects and starts polling `http://<mac-ip>:8787/usage`. Done.
 
-To change the bridge/Wi-Fi later, **long-press the `AI•USAGE` brand** (top-left of
-the screen) for ~1s to reopen the portal — change Wi-Fi or enter/update the pairing
-token, no reflashing needed.
+To change the bridge/Wi-Fi later, **tap the LIVE indicator** (the Wi-Fi indicator,
+top-right of any screen) to reopen the portal — change Wi-Fi or enter/update the
+pairing token, no reflashing needed.
 
 ## Using it
 
@@ -124,8 +124,9 @@ token, no reflashing needed.
 - **② Monitor** shows live CPU / RAM / Disk from the Mac, plus a net / battery /
   temperature ticker. It degrades to `—` when the bridge sends no `system` block.
 - **③ Remote** buttons enqueue an action that the network loop POSTs to the bridge
-  (`/action`) — taps never block rendering. The shortcut row uses the Mac's
-  `actions.json` allowlist (`YouTube`/`Music`/`Safari`/`Focus` are the
+  (`/action`) over Wi-Fi, or sends over the **USB serial** cable when Wi-Fi is down —
+  taps never block rendering. The shortcut row uses the Mac's
+  `actions.json` allowlist (`YouTube`/`Music`/`Safari`/`Claude` are the
   `actions.example.json` defaults; rename there **and** in `config.h`'s
   `ACTION_BODY[]` if you change them). Actions fail safely (with a toast) when no
   pairing token is set or the bridge has `REMOTE=0`.
