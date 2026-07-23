@@ -93,7 +93,7 @@ static const char *ACTION_BODY[ACT_COUNT] = {
   "{\"action\":\"open_url\",\"url\":\"https://youtube.com\"}",
   "{\"action\":\"open_app\",\"name\":\"Music\"}",
   "{\"action\":\"open_app\",\"name\":\"Safari\"}",
-  "{\"action\":\"shortcut\",\"name\":\"Focus\"}",
+  "{\"action\":\"open_url\",\"url\":\"https://claude.ai\"}",
   "{\"action\":\"media\",\"key\":\"prev\"}",
   "{\"action\":\"media\",\"key\":\"playpause\"}",
   "{\"action\":\"media\",\"key\":\"next\"}",

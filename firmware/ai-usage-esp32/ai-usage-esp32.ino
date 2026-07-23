@@ -360,7 +360,7 @@ static void screen_remote_build(lv_obj_t *parent) {
     { LV_SYMBOL_VIDEO, "YouTube", ACT_YT     },
     { LV_SYMBOL_AUDIO, "Music",   ACT_MUSIC  },
     { LV_SYMBOL_GPS,   "Safari",  ACT_SAFARI },
-    { LV_SYMBOL_BELL,  "Focus",   ACT_FOCUS  },
+    { LV_SYMBOL_EDIT,  "Claude",  ACT_FOCUS  },
   };
   const int tW = 144, tY = 31, tH = 56, gap = 10;
   for (int i = 0; i < 4; i++) {
@@ -397,7 +397,7 @@ static void screen_remote_build(lv_obj_t *parent) {
     { LV_SYMBOL_MUTE,       ACT_VOL_MUTE,  267, 36, false },
     { LV_SYMBOL_VOLUME_MAX, ACT_VOL_UP,    316, 36, false },
     { "LOCK",               ACT_LOCK,      420, 84, false },
-    { "SLEEP",              ACT_SLEEP,     514, 84, false },
+    { "SCREEN",             ACT_SLEEP,     514, 84, false },
   };
   for (int i = 0; i < 8; i++) {
     lv_obj_t *b = lv_btn_create(parent);

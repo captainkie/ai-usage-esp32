@@ -28,7 +28,7 @@ test("media / volume are enumerated", () => {
 });
 
 test("lock / display_sleep need no params; unknown action rejected", () => {
-  assert.equal(validateAction({ action: "lock" }, cfg).cmd.file, "osascript");
+  assert.deepEqual(validateAction({ action: "lock" }, cfg).cmd, { file: "open", args: ["-a", "ScreenSaverEngine"] });
   assert.deepEqual(validateAction({ action: "display_sleep" }, cfg).cmd, { file: "pmset", args: ["displaysleepnow"] });
   assert.equal(validateAction({ action: "nuke" }, cfg).ok, false);
 });
