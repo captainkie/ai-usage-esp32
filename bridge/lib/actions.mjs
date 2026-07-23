@@ -18,6 +18,21 @@ const MEDIA = {
   prev:      osa('tell application "Music" to previous track'),
 };
 
+// Parse an inbound USB line from the device. The Remote sends actions as
+// `@ACT <token> <json>` so it can drive the Mac over the USB cable with no Wi-Fi.
+// Returns { token, body } or null. Pure — the caller checks the token + validates.
+export function parseUsbAction(line) {
+  if (typeof line !== "string" || !line.startsWith("@ACT ")) return null;
+  const rest = line.slice(5).trimStart();
+  const sp = rest.indexOf(" ");
+  if (sp < 0) return null;
+  const token = rest.slice(0, sp);
+  if (!token) return null;
+  let body;
+  try { body = JSON.parse(rest.slice(sp + 1)); } catch { return null; }
+  return { token, body };
+}
+
 // Returns { ok:true, cmd:{file,args} } or { ok:false, error }.
 export function validateAction(body, cfg) {
   const a = body && body.action;

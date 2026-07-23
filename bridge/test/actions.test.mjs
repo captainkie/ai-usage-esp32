@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateAction } from "../lib/actions.mjs";
+import { validateAction, parseUsbAction } from "../lib/actions.mjs";
 
 const cfg = { urls: { YouTube: "https://youtube.com" }, apps: { Music: "Music" }, shortcuts: { Focus: "Focus" } };
 
@@ -31,4 +31,23 @@ test("lock / display_sleep need no params; unknown action rejected", () => {
   assert.equal(validateAction({ action: "lock" }, cfg).cmd.file, "osascript");
   assert.deepEqual(validateAction({ action: "display_sleep" }, cfg).cmd, { file: "pmset", args: ["displaysleepnow"] });
   assert.equal(validateAction({ action: "nuke" }, cfg).ok, false);
+});
+
+/* ---- parseUsbAction: Remote actions carried over the USB cable ---- */
+test("parseUsbAction reads a valid @ACT line into {token, body}", () => {
+  const p = parseUsbAction('@ACT abc123 {"action":"volume","dir":"up"}');
+  assert.deepEqual(p, { token: "abc123", body: { action: "volume", dir: "up" } });
+});
+test("parseUsbAction rejects non-@ACT lines, missing token, and bad json", () => {
+  assert.equal(parseUsbAction('{"action":"volume"}'), null);   // a plain usage/other line
+  assert.equal(parseUsbAction("@ACT onlytoken"), null);         // no json part
+  assert.equal(parseUsbAction("@ACT tok {not json}"), null);    // bad json
+  assert.equal(parseUsbAction("@ACT  {\"action\":\"lock\"}"), null); // empty token
+  assert.equal(parseUsbAction(42), null);                       // non-string
+});
+test("parseUsbAction output feeds validateAction (end-to-end shape)", () => {
+  const p = parseUsbAction('@ACT t {"action":"open_url","url":"https://youtube.com"}');
+  const v = validateAction(p.body, { urls: {}, apps: {}, shortcuts: {} });
+  assert.equal(v.ok, true);
+  assert.deepEqual(v.cmd, { file: "open", args: ["-a", "Safari", "https://youtube.com/"] });
 });
