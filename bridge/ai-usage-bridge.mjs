@@ -15,7 +15,7 @@ import http from "node:http";
 import https from "node:https";
 import { execFile, execSync } from "node:child_process";
 import { readFile, readdir, stat, open } from "node:fs/promises";
-import { existsSync, openSync, writeSync, closeSync, readdirSync } from "node:fs";
+import { existsSync, openSync, writeSync, closeSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -232,6 +232,22 @@ function win(w) {
 let lastGoodClaude = { model: null, effort: null, five_hour: null, seven_day: null };
 let lastGoodAt = 0;
 
+// Persist last-known-good to disk so a bridge *restart* (or a cold start during a
+// 429) still shows the last real reading instead of blanking to "no live data".
+const LAST_GOOD_PATH = path.join(HOME, ".config", "ai-usage-bridge", "last-good.json");
+(function loadLastGood() {
+  try {
+    const o = JSON.parse(readFileSync(LAST_GOOD_PATH, "utf8"));
+    if (o && o.claude) { lastGoodClaude = { ...lastGoodClaude, ...o.claude }; lastGoodAt = o.at || 0; }
+  } catch { /* no file yet — fine */ }
+})();
+function saveLastGood() {
+  try {
+    mkdirSync(path.dirname(LAST_GOOD_PATH), { recursive: true });
+    writeFileSync(LAST_GOOD_PATH, JSON.stringify({ claude: lastGoodClaude, at: lastGoodAt }));
+  } catch { /* best-effort */ }
+}
+
 async function buildPayload() {
   const providers = {
     claude: { name: "Claude", linked: false, model: null, effort: null, five_hour: null, seven_day: null },
@@ -265,7 +281,7 @@ async function buildPayload() {
       if (c[k] == null) c[k] = lastGoodClaude[k];
       else { lastGoodClaude[k] = c[k]; fresh = true; }
     }
-    if (fresh) lastGoodAt = Date.now();
+    if (fresh) { lastGoodAt = Date.now(); saveLastGood(); }
     if (c.five_hour || c.model) delete c.error;   // we have something real to show
   }
 
