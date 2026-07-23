@@ -1,0 +1,10 @@
+{
+  "wifi": [
+    { "ssid": "YourHomeWiFi", "pass": "home-password" },
+    { "ssid": "YourOfficeWiFi", "pass": "office-password" },
+    { "ssid": "YourPhoneHotspot", "pass": "hotspot-password" }
+  ],
+  "token": "paste-the-pairing-token-from-the-bridge",
+  "bridge_host": "",
+  "bridge_port": 8787
+}
