@@ -7,7 +7,10 @@
 #include <ESPmDNS.h>         // auto-discover the Mac bridge (_aiusage._tcp)
 #include <Preferences.h>
 #include <ArduinoJson.h>     // bblanchon/ArduinoJson v6
+#include <WiFiMulti.h>       // auto-join the strongest of several saved networks
 #include "config.h"
+#include "wifistore.h"       // NVS AP store (seeds WiFiMulti)
+#include "sdconf.h"          // read-only TF-card /pixie.json
 
 static Preferences        g_prefs;
 static String             g_host = "";
@@ -17,6 +20,7 @@ static char               g_bridge_desc[48] = "(not set)";
 static WiFiManagerParameter *g_pHost = nullptr;
 static WiFiManagerParameter *g_pPort = nullptr;
 static WiFiManagerParameter *g_pTok  = nullptr;
+static WiFiMulti             g_wifiMulti;
 
 static void net_save_params() {
   if (g_pHost) g_host  = g_pHost->getValue();
@@ -34,47 +38,94 @@ static void net_save_params() {
            g_host.length() ? g_host.c_str() : "(mDNS)", g_port.c_str());
 }
 
-// Bring up Wi-Fi. Opens the captive portal ("AI-Usage-Bar-Setup") when there
-// are no saved credentials or no bridge IP yet; there the user picks Wi-Fi and
-// types the Mac's IP + port. Blocks until connected.
+// Read the TF-card /pixie.json (if any) and seed the NVS AP store + token/host/port.
+// Import-and-forget: after this the card can be removed; the password lives in NVS.
+static void net_import_card() {
+  PixieConfig cfg;
+  if (!sdconf_load(&cfg)) { Serial.println("[sd] no /pixie.json (using NVS)"); return; }
+  Serial.printf("[sd] pixie.json: %d wifi, token=%s, host=%s\n",
+                cfg.wifi_n, cfg.token[0] ? "set" : "-", cfg.host[0] ? cfg.host : "(mDNS)");
+  for (int i = 0; i < cfg.wifi_n; i++) {
+    Serial.printf("[sd]  wifi[%d] ssid=%s pass=***\n", i, cfg.wifi[i].ssid);   // never print pass
+    wifistore_merge(&cfg.wifi[i]);
+  }
+  Preferences p; p.begin("aiusage", false);
+  if (cfg.token[0]) p.putString("token", cfg.token);
+  if (cfg.host[0])  p.putString("host", cfg.host);
+  if (cfg.port[0])  p.putString("port", cfg.port);
+  p.putBool("prov", true);
+  p.end();
+}
+
+// Capture the creds the portal just used into the AP store (so WiFiMulti joins them on the
+// next boot) and add them to the live WiFiMulti. Call right after startConfigPortal returns.
+static void net_capture_portal(WiFiManager &wm) {
+  WifiCred e;
+  strlcpy(e.ssid, wm.getWiFiSSID().c_str(), sizeof(e.ssid));
+  strlcpy(e.pass, wm.getWiFiPass().c_str(), sizeof(e.pass));
+  if (e.ssid[0]) { wifistore_merge(&e); g_wifiMulti.addAP(e.ssid, e.pass); }
+}
+
+// Bring up Wi-Fi. Seeds the multi-network store from the TF card, joins the strongest
+// saved network via WiFiMulti, and opens the captive portal only on the very first run
+// when nothing can be joined. mDNS (net_discover) resolves the Mac after connecting.
 static void net_begin() {
+  // 1. saved bridge config
   g_prefs.begin("aiusage", true);
   g_host  = g_prefs.getString("host", "");
   g_port  = g_prefs.getString("port", String(DEFAULT_BRIDGE_PORT));
   g_token = g_prefs.getString("token", "");
-  // Provisioned if the flag is set OR a host was saved by an older firmware
-  // (migration: pre-"prov" devices already have a host and must not re-enter setup).
+  g_prefs.end();
+
+  // 2. seed from the TF card (may set host/port/token + AP store), then re-read
+  net_import_card();
+  g_prefs.begin("aiusage", true);
+  g_host  = g_prefs.getString("host", g_host);
+  g_port  = g_prefs.getString("port", g_port);
+  g_token = g_prefs.getString("token", g_token);
   bool provisioned = g_prefs.getBool("prov", false) || g_host.length() > 0;
   g_prefs.end();
 
-  WiFiManager wm;
-  wm.setConfigPortalTimeout(WM_AP_TIMEOUT_S);
-  static WiFiManagerParameter pHost("host", "Mac bridge IP (blank = auto-find via mDNS)", g_host.c_str(), 24);
-  static WiFiManagerParameter pPort("port", "Bridge port", g_port.c_str(), 6);
-  static WiFiManagerParameter pTok("token", "Pairing token (from the Mac bridge)", g_token.c_str(), 40);
-  g_pHost = &pHost; g_pPort = &pPort; g_pTok = &pTok;
-  wm.addParameter(&pHost);
-  wm.addParameter(&pPort);
-  wm.addParameter(&pTok);
-  wm.setSaveParamsCallback(net_save_params);
+  // 3. build WiFiMulti from the NVS AP store
+  WifiCred aps[MAX_WIFI_APS];
+  int naps = wifistore_load(aps, MAX_WIFI_APS);
+  for (int i = 0; i < naps; i++) g_wifiMulti.addAP(aps[i].ssid, aps[i].pass);
+  if (naps > 0) provisioned = true;
 
-  // Force the portal on the very first run (never provisioned). After that the
-  // Mac IP may be left blank — mDNS discovers the bridge — so we key off a
-  // "provisioned" flag, not an empty host.
-  if (!provisioned) {
-    while (!provisioned) {
-      wm.startConfigPortal(WM_AP_NAME);
-      g_prefs.begin("aiusage", true); provisioned = g_prefs.getBool("prov", false); g_prefs.end();
-    }
-  } else {
-    // Don't block on a captive portal if Wi-Fi can't be joined (e.g. carried to an
-    // office network) — return so USB-serial can still drive the display. Tap the
-    // LIVE indicator to reopen the portal on demand.
-    wm.setEnableConfigPortal(false);
-    wm.autoConnect(WM_AP_NAME);
+  // 4. connect to the strongest reachable saved network
+  if (naps > 0) {
+    Serial.printf("[net] WiFiMulti: %d saved AP(s), joining strongest...\n", naps);
+    g_wifiMulti.run(WIFI_JOIN_TIMEOUT_MS);
   }
 
-  snprintf(g_bridge_desc, sizeof(g_bridge_desc), "%s:%s", g_host.c_str(), g_port.c_str());
+  // 5. captive-portal fallback only on the first-ever run with nothing to join. If
+  //    provisioned but nothing joined (carried elsewhere), do NOT block — USB-serial drives
+  //    the display and tapping the LIVE indicator reopens the portal on demand.
+  if (WiFi.status() != WL_CONNECTED && !provisioned) {
+    WiFiManager wm;
+    wm.setConfigPortalTimeout(WM_AP_TIMEOUT_S);
+    static WiFiManagerParameter pHost("host", "Mac bridge IP (blank = auto-find via mDNS)", g_host.c_str(), 24);
+    static WiFiManagerParameter pPort("port", "Bridge port", g_port.c_str(), 6);
+    static WiFiManagerParameter pTok("token", "Pairing token (from the Mac bridge)", g_token.c_str(), 40);
+    g_pHost = &pHost; g_pPort = &pPort; g_pTok = &pTok;
+    wm.addParameter(&pHost); wm.addParameter(&pPort); wm.addParameter(&pTok);
+    wm.setSaveParamsCallback(net_save_params);
+    bool ok = false;
+    while (!ok) {
+      wm.startConfigPortal(WM_AP_NAME);
+      net_capture_portal(wm);
+      g_prefs.begin("aiusage", true); ok = g_prefs.getBool("prov", false); g_prefs.end();
+      if (ok && WiFi.status() != WL_CONNECTED) g_wifiMulti.run(WIFI_JOIN_TIMEOUT_MS);
+    }
+    g_prefs.begin("aiusage", true);
+    g_host  = g_prefs.getString("host", g_host);
+    g_port  = g_prefs.getString("port", g_port);
+    g_token = g_prefs.getString("token", g_token);
+    g_prefs.end();
+  }
+
+  snprintf(g_bridge_desc, sizeof(g_bridge_desc), "%s:%s",
+           g_host.length() ? g_host.c_str() : "(mDNS)", g_port.c_str());
 }
 
 // Re-open the portal on demand (e.g. long-press a side button).
@@ -87,6 +138,7 @@ static void net_portal() {
   wm.addParameter(&pHost); wm.addParameter(&pPort); wm.addParameter(&pTok);
   wm.setSaveParamsCallback(net_save_params);
   wm.startConfigPortal(WM_AP_NAME);
+  net_capture_portal(wm);   // save the chosen network into the WiFiMulti store
 }
 
 static const char *net_bridge_desc() { return g_bridge_desc; }
