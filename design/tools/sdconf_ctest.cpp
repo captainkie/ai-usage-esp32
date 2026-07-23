@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include "wifistore.h"
+#include "sdconf.h"
 
 static int fails = 0;
 #define CHECK(c) do { if(!(c)){ printf("FAIL %s:%d %s\n",__FILE__,__LINE__,#c); fails++; } } while(0)
@@ -57,9 +58,28 @@ static void test_roundtrip() {
   CHECK(n == 2); CHECK(strcmp(back[1].ssid, "Office") == 0);
 }
 
+static void test_sdconf() {
+  PixieConfig c;
+  const char *j = "{\"wifi\":[{\"ssid\":\"Home\",\"pass\":\"pw1\"},{\"ssid\":\"Office\",\"pass\":\"pw2\"}],"
+                  "\"token\":\"tok123\",\"bridge_host\":\"\",\"bridge_port\":8787}";
+  CHECK(sdconf_parse(j, &c) == true);
+  CHECK(c.present); CHECK(c.wifi_n == 2);
+  CHECK(strcmp(c.wifi[0].ssid, "Home") == 0);
+  CHECK(strcmp(c.token, "tok123") == 0);
+  CHECK(c.host[0] == '\0');                 // blank host -> mDNS
+  CHECK(strcmp(c.port, "8787") == 0);
+  // host override + missing port
+  const char *j2 = "{\"wifi\":[],\"token\":\"t\",\"bridge_host\":\"192.168.1.40\"}";
+  CHECK(sdconf_parse(j2, &c)); CHECK(c.wifi_n == 0);
+  CHECK(strcmp(c.host, "192.168.1.40") == 0); CHECK(c.port[0] == '\0');
+  // malformed
+  CHECK(sdconf_parse("{bad", &c) == false);
+  CHECK(sdconf_parse("", &c) == false);
+}
+
 int main() {
   test_parse(); test_merge(); test_cap(); test_roundtrip();
-  // test_sdconf() added in Task 3
+  test_sdconf();
   printf(fails ? "\n%d FAILURES\n" : "\nALL PASS\n", fails);
   return fails ? 1 : 0;
 }
