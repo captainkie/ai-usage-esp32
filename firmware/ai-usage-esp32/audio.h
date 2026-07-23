@@ -18,6 +18,7 @@
 static esp_codec_dev_handle_t g_playback = NULL;
 static esp_codec_dev_handle_t g_record   = NULL;
 static esp_io_expander_handle_t g_io_expander = NULL;
+static int g_out_vol = 80;                        // speaker volume 0..100 (screen ④ +/-)
 
 // Set up the speaker-amp enable line (TCA9554 pin 7). Without the amp on the
 // ES8311 plays but nothing reaches the speaker.
@@ -52,7 +53,7 @@ static bool audio_init() {
   g_record   = get_record_handle();
   if (!g_playback || !g_record) return false;
 
-  esp_codec_dev_set_out_vol(g_playback, 95.0);   // speaker volume 0..100
+  esp_codec_dev_set_out_vol(g_playback, (float)g_out_vol);   // 80 captured cleanly; 95 hummed into the mic
   esp_codec_dev_set_in_gain(g_record, 35.0);     // mic gain — 35 captured cleanly; 40 amplified noise
   esp_codec_dev_sample_info_t fs = {};
   fs.sample_rate     = AUDIO_RATE;
@@ -64,8 +65,11 @@ static bool audio_init() {
 }
 
 static void audio_set_volume(int vol) {          // 0..100
+  if (vol < 0) vol = 0; if (vol > 100) vol = 100;
+  g_out_vol = vol;
   if (g_playback) esp_codec_dev_set_out_vol(g_playback, (float)vol);
 }
+static int audio_get_volume() { return g_out_vol; }
 
 // Record up to `maxSamples` int16 samples from the mic. Blocks. Returns the number
 // of samples captured (== maxSamples here; a later step adds silence detection).
