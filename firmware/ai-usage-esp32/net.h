@@ -99,6 +99,7 @@ static bool parse_usage_body(const char *body, UsageState *out) {
     JsonObjectConst pr = provs[keys[i]];
     ProviderState *ps = &out->p[i];
     ps->linked = pr["linked"] | false;
+    ps->stale  = pr["stale"]  | false;
     strlcpy(ps->model,  pr["model"]  | "", sizeof(ps->model));
     strlcpy(ps->effort, pr["effort"] | "", sizeof(ps->effort));
     parse_window(pr["five_hour"], &ps->five);

@@ -44,6 +44,7 @@ typedef struct {
 
 typedef struct {
   bool   linked;
+  bool   stale;     // usage is a cached last-known-good reading (bridge is 429-backing-off)
   char   model[40];
   char   effort[12];
   Window five;

@@ -554,8 +554,16 @@ static void render_cb(lv_timer_t *t) {
   snprintf(rr, sizeof(rr), LV_SYMBOL_REFRESH " %s", r5); lv_label_set_text(lblFiveRst, rr);
   snprintf(rr, sizeof(rr), LV_SYMBOL_REFRESH " %s", r7); lv_label_set_text(lblSevenRst, rr);
 
-  // LIVE indicator
-  lv_obj_set_style_text_color(lblLive, LVC(have && st.ok ? COL_LIVE : 0x6B7180), 0);
+  // LIVE / CACHED indicator — dim + relabel to amber when the bridge is serving a
+  // stale last-known-good reading (usage endpoint 429-backing-off), so a frozen %
+  // never masquerades as live.
+  if (have && st.ok && pr->stale) {
+    lv_label_set_text(lblLive, LV_SYMBOL_WIFI " CACHED");
+    lv_obj_set_style_text_color(lblLive, LVC(COL_WARN), 0);
+  } else {
+    lv_label_set_text(lblLive, LV_SYMBOL_WIFI " LIVE");
+    lv_obj_set_style_text_color(lblLive, LVC(have && st.ok ? COL_LIVE : 0x6B7180), 0);
+  }
 
   // pills
   for (int i = 0; i < PV_COUNT; i++) style_pill(i, i == g_provider);
