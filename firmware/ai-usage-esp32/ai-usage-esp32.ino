@@ -33,6 +33,11 @@
 extern "C" bool aiusage_lvgl_lock(int timeout_ms);
 extern "C" void aiusage_lvgl_unlock(void);
 
+// Thai-capable font (Noto Sans + Noto Sans Thai, 16px) for the voice transcript —
+// Montserrat is Latin-only so Thai renders as tofu boxes. Defined in pixie_thai_16.c
+// (C linkage → extern "C" or the C++ sketch can't link the C-compiled symbol).
+extern "C" const lv_font_t pixie_thai_16;
+
 #define LVC(rgb) lv_color_hex(rgb)
 
 /* ---------------- shared state (net task <-> render timer) ---------------- */
@@ -455,7 +460,9 @@ static lv_obj_t *vMascotCanvas; static lv_color_t *vMascotBuf = nullptr;
 
 static void voice_tap_cb(lv_event_t *e) {     // tap the orb -> one voice turn
   (void)e;
-  if (g_voice_state == VOICE_IDLE) g_voice_trigger = true;
+  // Trigger from IDLE or ERROR — a failed turn (e.g. no-speech 422) must not be a
+  // dead end where the orb stops accepting taps.
+  if (g_voice_state == VOICE_IDLE || g_voice_state == VOICE_ERROR) g_voice_trigger = true;
 }
 static void voice_prov_cb(lv_event_t *e) {    // tap the provider chip -> cycle it
   (void)e;
@@ -486,7 +493,7 @@ static lv_obj_t *voice_tagged(lv_obj_t *parent, const char *tag, uint32_t tagc,
   lv_label_set_long_mode(txt, LV_LABEL_LONG_DOT);
   lv_obj_set_width(txt, wrapw);
   lv_label_set_text(txt, "");
-  lv_obj_set_style_text_font(txt, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_font(txt, &pixie_thai_16, 0);   // Thai+Latin so ไทย isn't tofu
   lv_obj_set_style_text_color(txt, LVC(txtc), 0);
   lv_obj_set_pos(txt, 92 + lv_obj_get_width(chip) + 8, y);
   *outTxt = txt;
@@ -600,6 +607,14 @@ static void voice_render() {
     { "TAP TO TALK", COL_GOOD }, { "LISTENING", COL_GOOD },
     { "THINKING",    COL_WARN }, { "SPEAKING",  COL_CLAY }, { "ERROR", COL_CRIT },
   };
+  // Auto-recover from ERROR so the orb returns to green "TAP TO TALK" on its own
+  // (belt-and-suspenders with the tap-from-ERROR path).
+  static uint32_t err_since = 0;
+  if (g_voice_state == VOICE_ERROR) {
+    if (err_since == 0) err_since = millis();
+    else if (millis() - err_since > 4000) { g_voice_state = VOICE_IDLE; err_since = 0; }
+  } else err_since = 0;
+
   int s = g_voice_state; if (s < 0 || s > 4) s = 0;
   lv_label_set_text(vState, S[s].t);
   lv_obj_set_style_text_color(vState, LVC(S[s].c), 0);

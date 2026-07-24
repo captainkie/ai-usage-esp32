@@ -30,17 +30,30 @@ static void voice_wav_header(uint8_t *h, uint32_t dataBytes) {
   memcpy(h+36, "data", 4);         wav_u32(h+40, dataBytes);
 }
 
-// URL-decode in place (for the X-Transcript / X-Reply headers).
+// URL-decode in place (for the X-Transcript / X-Reply headers). The headers are
+// length-bounded, so a long Thai reply can be cut mid-escape; we stop at a
+// truncated %XX and drop any dangling incomplete UTF-8 tail so it renders cleanly
+// (Thai is 3 bytes/char — a half-copied char would otherwise show as a tofu box).
 static void voice_url_decode(char *s) {
+  auto ishex = [](char c){ return (c>='0'&&c<='9') || ((c|0x20)>='a' && (c|0x20)<='f'); };
+  auto hex   = [](char c){ return c<='9'?c-'0':(c|0x20)-'a'+10; };
   char *o = s;
   for (char *p = s; *p; p++) {
-    if (*p == '%' && p[1] && p[2]) {
-      auto hex = [](char c){ return c<='9'?c-'0':(c|0x20)-'a'+10; };
-      *o++ = (char)((hex(p[1])<<4) | hex(p[2])); p += 2;
+    if (*p == '%') {
+      if (p[1] && p[2] && ishex(p[1]) && ishex(p[2])) { *o++ = (char)((hex(p[1])<<4) | hex(p[2])); p += 2; }
+      else break;                                   // truncated escape -> drop the rest
     } else if (*p == '+') *o++ = ' ';
     else *o++ = *p;
   }
   *o = 0;
+  // Trim a dangling incomplete UTF-8 sequence at the end.
+  int n = (int)(o - s), i = n - 1;
+  while (i >= 0 && ((unsigned char)s[i] & 0xC0) == 0x80) i--;   // step back over continuation bytes
+  if (i >= 0) {
+    unsigned char c = s[i];
+    int need = c < 0x80 ? 1 : (c & 0xE0) == 0xC0 ? 2 : (c & 0xF0) == 0xE0 ? 3 : (c & 0xF8) == 0xF0 ? 4 : 0;
+    if (need == 0 || n - i < need) s[i] = 0;                    // invalid or incomplete -> cut here
+  }
 }
 
 // One full voice turn: record -> POST /voice -> play the reply. Blocking; call
@@ -73,14 +86,27 @@ static bool voice_ask() {
   free(wav);
   if (code != 200) {
     Serial.printf("[voice] POST -> HTTP %d\n", code);
-    http.end(); g_voice_state = VOICE_ERROR; return false;
+    http.end();
+    // 422 = whisper heard no words (silence / spoke too late). Show a friendly hint
+    // instead of a bare ERROR; the orb stays tappable (see voice_tap_cb).
+    if (code == 422) {
+      g_voice_transcript[0] = 0;
+      strlcpy(g_voice_reply, "ไม่ได้ยินเสียง — แตะแล้วพูดเลย", sizeof(g_voice_reply));
+    }
+    g_voice_state = VOICE_ERROR;
+    return false;
   }
 
   // transcript + reply (for the screen)
-  strlcpy(g_voice_transcript, http.header("X-Transcript").c_str(), sizeof(g_voice_transcript));
-  strlcpy(g_voice_reply,      http.header("X-Reply").c_str(),      sizeof(g_voice_reply));
+  // strlcpy returns the SOURCE length, so a return >= buffer size means the header
+  // (which is length-bounded) was cut to fit — append "…" so a long reply reads as
+  // trimmed, not abruptly ended. The full answer is still spoken from the reply WAV.
+  size_t tlen = strlcpy(g_voice_transcript, http.header("X-Transcript").c_str(), sizeof(g_voice_transcript));
+  size_t rlen = strlcpy(g_voice_reply,      http.header("X-Reply").c_str(),      sizeof(g_voice_reply));
   voice_url_decode(g_voice_transcript);
   voice_url_decode(g_voice_reply);
+  if (tlen >= sizeof(g_voice_transcript)) strlcat(g_voice_transcript, "…", sizeof(g_voice_transcript));
+  if (rlen >= sizeof(g_voice_reply))      strlcat(g_voice_reply,      "…", sizeof(g_voice_reply));
   Serial.printf("[voice] you: %s\n[voice] pixie: %s\n", g_voice_transcript, g_voice_reply);
 
   // 3) read the reply WAV, skip its 44-byte header, play the PCM.

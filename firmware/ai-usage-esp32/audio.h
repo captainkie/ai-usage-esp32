@@ -20,7 +20,8 @@ static esp_codec_dev_handle_t g_playback = NULL;
 static esp_codec_dev_handle_t g_record   = NULL;
 // g_io_expander (the shared TCA9554 handle) lives in power.h — power_begin() already
 // created it and latched SYS_EN (EXIO6) by the time audio_init() runs.
-static int g_out_vol = 80;                        // speaker volume 0..100 (screen ④ +/-)
+static int g_out_vol = 100;                       // speaker volume 0..100 (screen ④ +/-); amp is
+                                                  // OFF while recording so max vol won't hum the mic
 
 // Set up the speaker-amp enable line (TCA9554 pin 7). Without the amp on the
 // ES8311 plays but nothing reaches the speaker. Reuses the shared expander so we
