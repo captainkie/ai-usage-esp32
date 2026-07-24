@@ -28,6 +28,7 @@
 #include "power.h"                            // battery power latch (SYS_EN) + PWR button
 #include "audio.h"
 #include "voice.h"
+#include "pixie_img.h"    // 120×120 RGB565 Pixie chibi shown on the voice screen ④
 
 // Exposed by the small lvgl_port patch (see firmware/README.md).
 extern "C" bool aiusage_lvgl_lock(int timeout_ms);
@@ -45,7 +46,7 @@ static portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 static UsageState   g_state;
 static bool         g_have = false;
 static int          g_provider = PV_CLAUDE;
-static int          g_mascot   = MASC_RUNNER;   // default companion (tap to change)
+static int          g_mascot   = MASC_RUNNER;   // default companion on the usage screens (tap to change); Pixie is voice-screen-only
 
 /* ---------------- LVGL objects ---------------- */
 static lv_obj_t *lblBrand, *lblModel, *lblEffort, *lblLive;
@@ -624,8 +625,9 @@ static void voice_render() {
   if (vProvChip) lv_label_set_text(vProvChip, g_voice_provider);   // active provider
 
   if (vMascotBuf) {
-    mascot_render((uint16_t *)vMascotBuf, 120, 120, g_mascot,
-                  PROVIDER_COLOR[g_provider], MOOD_CHILL, animT, mascot_to565(COL_BG));
+    // screen ④ shows the Pixie chibi (a pre-rendered 120×120 RGB565 bitmap of the
+    // approved design — smoother than the pixel companions on the usage screens).
+    memcpy((void *)vMascotBuf, pixie_img, 120 * 120 * sizeof(uint16_t));
 #if LV_COLOR_16_SWAP
     uint16_t *mb = (uint16_t *)vMascotBuf;
     for (int i = 0; i < 120 * 120; i++) { uint16_t v = mb[i]; mb[i] = (uint16_t)((v >> 8) | (v << 8)); }
