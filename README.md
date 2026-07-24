@@ -233,8 +233,31 @@ screen. Append `?gallery` to see every companion at once.
 
 **[Waveshare ESP32-S3-Touch-LCD-3.49](https://www.waveshare.com/esp32-s3-touch-lcd-3.49.htm)** —
 ESP32-S3R8, 8MB PSRAM / 16MB Flash, 3.49″ 640×172 IPS, AXS15231B (QSPI + I²C
-touch), Wi-Fi + BT5, 6-axis IMU, Li-po connector (so it can run untethered).
-Full notes + driver rationale in **[esp32/HARDWARE.md](esp32/HARDWARE.md)**.
+touch), Wi-Fi + BT5, 6-axis IMU, Li-po / 18650 connector (runs untethered — see
+**Buttons & power** below). Full notes + driver rationale in
+**[esp32/HARDWARE.md](esp32/HARDWARE.md)**.
+
+### Buttons & power (running on battery)
+
+Three side buttons, and on battery the firmware has to **latch its own power** — so
+these matter:
+
+| Button | Short press | Hold (≈1.5 s) |
+| --- | --- | --- |
+| **PWR** | screen on/off (sleep) | **power off** |
+| **BOOT** | next screen | open Wi-Fi setup portal |
+| **RESET** | restart | — |
+
+**Turn it on:** press **PWR** and hold ~a second until the screen lights. On battery
+the board only *stays* on because the firmware drives the board's `SYS_EN` line high
+the instant it boots (TCA9554 EXIO6) — a quick tap that ends before the firmware is
+up just flashes static and goes dark. **Turn it off:** hold **PWR** until the screen
+cuts. On USB there's nothing to latch (it powers straight from the cable), so "power
+off" only takes effect on battery.
+
+> Building your own from Waveshare's examples? This is the `07_BATT_PWR_Test`
+> power-latch pattern — without it the board can't run off the battery no matter how
+> charged the cell is (USB hides the bug because VBUS powers the board directly).
 
 ## Roadmap
 
