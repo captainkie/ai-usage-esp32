@@ -236,14 +236,27 @@ const PIXIE_MODELS = process.env.PIXIE_MODEL
   ? [process.env.PIXIE_MODEL]
   : ["claude-sonnet-5", "claude-haiku-4-5-20251001"];
 
+// Give Pixie live web access (prices, weather, news, today's date) via Anthropic's
+// server-side web_search tool — the model runs the search itself. Set
+// PIXIE_WEB_SEARCH=0 to disable. Use the BASIC variant (web_search_20250305): it
+// works on every Pixie model incl. Haiku, whereas web_search_20260209 (dynamic
+// filtering) is Sonnet-5/Opus-only and would break the Haiku fallback. Verified the
+// Claude Code OAuth token accepts this tool (Haiku 200 with a real, cited answer).
+const PIXIE_WEB_SEARCH = process.env.PIXIE_WEB_SEARCH !== "0";
+
 async function askClaude(prompt) {
   const token = await readClaudeToken();
   if (!token) throw new Error("not linked");
   const mkBody = (model) => JSON.stringify({
     model,
-    max_tokens: 300,
-    system: "You are Pixie, a concise voice assistant living on a tiny desk display. Answer in the user's language, in 1-3 short spoken sentences. Plain text only \u2014 no markdown, lists, or code.",
+    // web search interleaves tool-use blocks with the answer, so it needs more room
+    // than a plain reply; keep it tight (300) when search is off.
+    max_tokens: PIXIE_WEB_SEARCH ? 1024 : 300,
+    system: "You are Pixie, a concise voice assistant living on a tiny desk display. " +
+      "Answer in the user's language, in 1-3 short spoken sentences. Plain text only \u2014 no markdown, lists, or code. " +
+      "You can search the web \u2014 use it for real-time facts (prices, weather, news, today's date) and reply with the number or fact itself, not the source or a URL.",
     messages: [{ role: "user", content: String(prompt).slice(0, 2000) }],
+    ...(PIXIE_WEB_SEARCH ? { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }] } : {}),
   });
   let lastStatus = 0;
   for (const model of PIXIE_MODELS) {
@@ -259,7 +272,12 @@ async function askClaude(prompt) {
         },
         body: mkBody(model),
       });
-      if (res.ok) { const j = await res.json(); return (j?.content?.[0]?.text || "").trim(); }
+      if (res.ok) {
+        const j = await res.json();
+        // With web search the reply interleaves server_tool_use / web_search_tool_result
+        // blocks with text — join every text block, not just content[0].
+        return (j?.content || []).filter((b) => b?.type === "text").map((b) => b.text).join(" ").trim();
+      }
       lastStatus = res.status;
       if (res.status === 429) {
         if (attempt === 0) { await new Promise((r) => setTimeout(r, 1200)); continue; }  // brief retry
