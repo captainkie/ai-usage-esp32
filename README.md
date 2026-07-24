@@ -233,8 +233,31 @@ screen. Append `?gallery` to see every companion at once.
 
 **[Waveshare ESP32-S3-Touch-LCD-3.49](https://www.waveshare.com/esp32-s3-touch-lcd-3.49.htm)** —
 ESP32-S3R8, 8MB PSRAM / 16MB Flash, 3.49″ 640×172 IPS, AXS15231B (QSPI + I²C
-touch), Wi-Fi + BT5, 6-axis IMU, Li-po connector (so it can run untethered).
-Full notes + driver rationale in **[esp32/HARDWARE.md](esp32/HARDWARE.md)**.
+touch), Wi-Fi + BT5, 6-axis IMU, Li-po / 18650 connector (runs untethered — see
+**Buttons & power** below). Full notes + driver rationale in
+**[esp32/HARDWARE.md](esp32/HARDWARE.md)**.
+
+### Buttons & power (running on battery)
+
+Three side buttons, and on battery the firmware has to **latch its own power** — so
+these matter:
+
+| Button | Short press | Hold (≈1.5 s) |
+| --- | --- | --- |
+| **PWR** | screen on/off (sleep) | **power off** |
+| **BOOT** | next screen | open Wi-Fi setup portal |
+| **RESET** | restart | — |
+
+**Turn it on:** press **PWR** and hold ~a second until the screen lights. On battery
+the board only *stays* on because the firmware drives the board's `SYS_EN` line high
+the instant it boots (TCA9554 EXIO6) — a quick tap that ends before the firmware is
+up just flashes static and goes dark. **Turn it off:** hold **PWR** until the screen
+cuts. On USB there's nothing to latch (it powers straight from the cable), so "power
+off" only takes effect on battery.
+
+> Building your own from Waveshare's examples? This is the `07_BATT_PWR_Test`
+> power-latch pattern — without it the board can't run off the battery no matter how
+> charged the cell is (USB hides the bug because VBUS powers the board directly).
 
 ## Roadmap
 
@@ -247,14 +270,19 @@ Full notes + driver rationale in **[esp32/HARDWARE.md](esp32/HARDWARE.md)**.
   typing its IP), and a TF-card config file — so switching between locations
   needs no re-typing at all.
 - **Bluetooth (BLE) transport** *(planned)* — a wireless, network-free link to the Mac.
-- **Voice AI assistant — "Pixie"** *(Phase 1 in progress)* — say **"Jarvis"** or tap → ask → Pixie
-  speaks Claude's answer, with STT + TTS free + local on your Mac. The board's dual-mic array + audio
-  codec (ES7210 ADC / ES8311 DAC + speaker header) do the ears + mouth. The assistant then grows:
-  - **"Pixie" custom wake word** — Phase 1 ships on the stock, offline **"Jarvis"** WakeNet word first;
-    the brand-matching **"Pixie"** wake word needs a custom model (a fast-follow).
-  - **Multi-provider (GPT / Gemini / Kimi) + an AI-settings screen ④** — pick the brain per query.
-  - **Voice control** — "lock my Mac", "switch to Codex" — drive the device + Mac by voice.
-  - **Proactive spoken announcements** — usage / reset alerts Pixie says out loud.
+- **Voice AI assistant — "Pixie"** *(working — tap to talk)* — tap the mic → ask → Pixie speaks
+  Claude's answer, with STT + TTS free + local on your Mac (whisper **`medium`** for accurate Thai,
+  macOS `say` for a female voice). The board's dual-mic array + audio codec (ES7210 ADC / ES8311 DAC
+  + speaker) are the ears + mouth. **Live web answers are on** — ask for today's gold price or the
+  weather and Pixie searches the web before she answers. From here she grows into a real assistant:
+  - **A new face** — Pixie becomes a cute glasses-wearing assistant on screen ④, replacing the pixel
+    runner *(design done; on-device sprite in progress)*.
+  - **"Pixie" wake word** — call her name hands-free; tap-to-talk stays as the reliable default.
+  - **Provider / model switch** — pick the brain per query (Claude / Codex / Gemini) from screen ④.
+  - **A real assistant — tool-calling** *(the big one)* — give Pixie tools so she *does* things: open
+    apps on the Mac by voice, check your mail, know your next meeting, even live in a team Discord.
+    Read-only actions run right away; anything that changes things or sends outward asks first. See
+    [`docs/superpowers/specs/2026-07-24-pixie-assistant-platform-roadmap.md`](docs/superpowers/specs/2026-07-24-pixie-assistant-platform-roadmap.md).
 
 ## Privacy
 

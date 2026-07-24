@@ -143,6 +143,64 @@ static void net_portal() {
 
 static const char *net_bridge_desc() { return g_bridge_desc; }
 
+// Set true to request one voice turn (from a "@VOICE" serial line or a touch);
+// drained in loop() which calls voice_ask(). Declared here so net_usb_read can set it.
+static volatile bool g_voice_trigger = false;
+
+// Voice provider (screen ④ chip): the active provider name + a request to cycle it.
+static char g_voice_provider[24] = "Claude";
+static volatile bool g_provider_cycle = false;
+
+// GET /voice/providers -> copy the active provider's display name into g_voice_provider.
+static void net_provider_refresh() {
+  if (WiFi.status() != WL_CONNECTED || g_host.length() == 0) return;
+  HTTPClient http;
+  String url = "http://" + g_host + ":" + g_port + "/voice/providers";
+  http.setConnectTimeout(HTTP_TIMEOUT_MS); http.setTimeout(HTTP_TIMEOUT_MS);
+  if (!http.begin(url)) return;
+  if (http.GET() == 200) {
+    DynamicJsonDocument doc(2048);
+    if (!deserializeJson(doc, http.getString())) {
+      const char *act = doc["active"] | "";
+      for (JsonObjectConst p : doc["providers"].as<JsonArrayConst>())
+        if (strcmp(p["id"] | "", act) == 0) { strlcpy(g_voice_provider, p["name"] | "Claude", sizeof(g_voice_provider)); break; }
+    }
+  }
+  http.end();
+}
+
+// Cycle to the next provider: read the list, POST the next id, refresh the name.
+static void net_provider_cycle() {
+  if (WiFi.status() != WL_CONNECTED || g_host.length() == 0 || g_token.length() == 0) return;
+  HTTPClient http;
+  String url = "http://" + g_host + ":" + g_port + "/voice/providers";
+  http.setConnectTimeout(HTTP_TIMEOUT_MS); http.setTimeout(HTTP_TIMEOUT_MS);
+  if (!http.begin(url)) return;
+  String nextId;
+  if (http.GET() == 200) {
+    DynamicJsonDocument doc(2048);
+    if (!deserializeJson(doc, http.getString())) {
+      const char *act = doc["active"] | "";
+      JsonArrayConst arr = doc["providers"].as<JsonArrayConst>();
+      int n = arr.size(), cur = 0, i = 0;
+      for (JsonObjectConst p : arr) { if (strcmp(p["id"] | "", act) == 0) cur = i; i++; }
+      i = 0;
+      for (JsonObjectConst p : arr) { if (i == (cur + 1) % n) { nextId = String((const char *)(p["id"] | "")); } i++; }
+    }
+  }
+  http.end();
+  if (nextId.length()) {
+    HTTPClient h2;
+    if (h2.begin("http://" + g_host + ":" + g_port + "/voice/provider")) {
+      h2.addHeader("Content-Type", "application/json");
+      h2.addHeader("X-Pixie-Token", g_token);
+      h2.POST(String("{\"id\":\"") + nextId + "\"}");
+      h2.end();
+    }
+    net_provider_refresh();
+  }
+}
+
 static void parse_window(JsonVariantConst w, Window *dst) {
   if (w.isNull()) { dst->util = -1; dst->reset_in = -1; return; }
   dst->util     = w["util"]     | -1;
@@ -162,6 +220,7 @@ static bool parse_usage_body(const char *body, UsageState *out) {
     JsonObjectConst pr = provs[keys[i]];
     ProviderState *ps = &out->p[i];
     ps->linked = pr["linked"] | false;
+    ps->stale  = pr["stale"]  | false;
     strlcpy(ps->model,  pr["model"]  | "", sizeof(ps->model));
     strlcpy(ps->effort, pr["effort"] | "", sizeof(ps->effort));
     parse_window(pr["five_hour"], &ps->five);
@@ -261,7 +320,8 @@ static bool net_usb_read(UsageState *out) {
         got = parse_usage_body(buf, out);
         if (!got) Serial.printf("[usb] parse fail len=%u\n", (unsigned)len);
       } else if (len > 0) {
-        Serial.printf("[usb] non-json len=%u first=%d\n", (unsigned)len, (int)buf[0]);
+        buf[len] = '\0';
+        if (strcmp(buf, "@VOICE") == 0) g_voice_trigger = true;   // test/remote push-to-talk
       }
       len = 0;
       if (got) return true;

@@ -6,8 +6,10 @@
 //
 // One-time setup (see bridge/README.md):
 //   brew install whisper-cpp
-//   curl -L -o ~/.config/ai-usage-bridge/models/ggml-base.bin \
-//     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
+//   curl -L -o ~/.config/ai-usage-bridge/models/ggml-medium.bin \
+//     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin
+// `medium` (not `base`) — base transcribes Thai badly ("ภาษาไทย" -> "ภาษาท่าย");
+// medium is accurate at ~2s/clip on Apple silicon. Override with WHISPER_MODEL.
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -18,8 +20,12 @@ import path from "node:path";
 const execFileP = promisify(execFile);
 
 const MODEL = process.env.WHISPER_MODEL ||
-  path.join(os.homedir(), ".config", "ai-usage-bridge", "models", "ggml-base.bin");
+  path.join(os.homedir(), ".config", "ai-usage-bridge", "models", "ggml-medium.bin");
 const WHISPER = process.env.WHISPER_BIN || "whisper-cli";
+// STT language. Default "th" — whisper's `-l auto` confuses Thai with other tonal
+// languages (e.g. Vietnamese) on short clips, so we force Thai. Set PIXIE_STT_LANG
+// to "auto" for auto-detect, or "en"/etc. for a non-Thai device.
+const STT_LANG = process.env.PIXIE_STT_LANG || "th";
 
 /** Thrown when whisper finds no words (silence / mis-trigger) — caller maps to 422. */
 export class NoSpeech extends Error {}
@@ -32,13 +38,19 @@ export async function transcribe(wavPath) {
   const outBase = wavPath.replace(/\.wav$/i, "") + ".stt";
   const { stderr } = await execFileP(
     WHISPER,
-    ["-m", MODEL, "-f", wavPath, "-l", "auto", "-otxt", "-of", outBase],
+    ["-m", MODEL, "-f", wavPath, "-l", STT_LANG, "-otxt", "-of", outBase],
     { maxBuffer: 16 << 20 },
   );
   let text = "";
   try { text = (await readFile(outBase + ".txt", "utf8")).trim(); } catch { /* empty */ }
-  const m = /auto-detected language:\s*([a-z]{2})/i.exec(stderr || "");
-  return { text, lang: m ? m[1].toLowerCase() : "en" };
+  // When forced to a language, report it (so `say` picks the matching voice); only
+  // parse whisper's guess when we actually asked it to auto-detect.
+  let lang = STT_LANG;
+  if (STT_LANG === "auto") {
+    const m = /auto-detected language:\s*([a-z]{2})/i.exec(stderr || "");
+    lang = m ? m[1].toLowerCase() : "en";
+  }
+  return { text, lang };
 }
 
 /** A female macOS voice per language: Kanya (Thai), Samantha (default). */

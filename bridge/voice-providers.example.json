@@ -1,0 +1,26 @@
+{
+  "active": "claude",
+  "providers": {
+    "claude": { "name": "Claude", "builtin": true },
+
+    "glm": {
+      "name": "GLM (z.ai)",
+      "url": "https://api.z.ai/api/paas/v4/chat/completions",
+      "key": "PUT-YOUR-ZAI-KEY-HERE",
+      "models": ["glm-4.6", "glm-4.5-flash"]
+    },
+
+    "_openai_example": {
+      "name": "OpenAI GPT",
+      "url": "https://api.openai.com/v1/chat/completions",
+      "key": "sk-...",
+      "models": ["gpt-4o-mini"]
+    },
+    "_kimi_example": {
+      "name": "Kimi (Moonshot)",
+      "url": "https://api.moonshot.cn/v1/chat/completions",
+      "key": "sk-...",
+      "models": ["moonshot-v1-8k"]
+    }
+  }
+}
