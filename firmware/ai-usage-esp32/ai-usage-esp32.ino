@@ -568,11 +568,13 @@ static void screen_voice_build(lv_obj_t *parent) {
   voice_tagged(parent, "YOU SAID", 0x3A3F4E, 0xAEB4C6,  96, 300, &vYou);
   voice_tagged(parent, "PIXIE",    COL_CLAY, 0xEAECF2, 120, 300, &vReply);
 
-  // mascot (right) — reuses the pixel engine (fixed 120px art)
-  vMascotBuf = (lv_color_t *)heap_caps_malloc(120 * 120 * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
+  // Pixie chibi (top-right) — 120×120 source art shown at 100×100 to match
+  // design/mockup.html (.mascot-v). Chroma-keyed so the flat background drops
+  // out (transparent), and sized/placed to clear the volume row below it.
+  vMascotBuf = (lv_color_t *)heap_caps_malloc(100 * 100 * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
   vMascotCanvas = lv_canvas_create(parent);
-  lv_canvas_set_buffer(vMascotCanvas, vMascotBuf, 120, 120, LV_IMG_CF_TRUE_COLOR);
-  lv_obj_set_pos(vMascotCanvas, 512, 28);
+  lv_canvas_set_buffer(vMascotCanvas, vMascotBuf, 100, 100, LV_IMG_CF_TRUE_COLOR_CHROMA_KEYED);
+  lv_obj_set_pos(vMascotCanvas, 516, 34);
 
   // volume:  🔊  [−]  80  [+]   (bottom-right)
   lv_obj_t *vk = lv_label_create(parent);
@@ -626,12 +628,24 @@ static void voice_render() {
 
   if (vMascotBuf) {
     // screen ④ shows the Pixie chibi (a pre-rendered 120×120 RGB565 bitmap of the
-    // approved design — smoother than the pixel companions on the usage screens).
-    memcpy((void *)vMascotBuf, pixie_img, 120 * 120 * sizeof(uint16_t));
-#if LV_COLOR_16_SWAP
+    // approved design). Nearest-neighbour downscale 120→100 into the canvas and
+    // punch out the flat 0x0021 background to LVGL's chroma key so it renders
+    // transparent instead of a dark square frame. NN (not averaging) keeps the
+    // background pixels exactly 0x0021 so they key out cleanly with no fringe.
     uint16_t *mb = (uint16_t *)vMascotBuf;
-    for (int i = 0; i < 120 * 120; i++) { uint16_t v = mb[i]; mb[i] = (uint16_t)((v >> 8) | (v << 8)); }
+    lv_color_t ckc = LV_COLOR_CHROMA_KEY;
+    const uint16_t CK = ckc.full;                 // chroma key in stored (native) layout
+    for (int y = 0; y < 100; y++) {
+      int sy = y * 120 / 100;
+      for (int x = 0; x < 100; x++) {
+        uint16_t v = pixie_img[sy * 120 + (x * 120 / 100)];
+        if (v == 0x0021) { mb[y * 100 + x] = CK; continue; }   // background → transparent
+#if LV_COLOR_16_SWAP
+        v = (uint16_t)((v >> 8) | (v << 8));
 #endif
+        mb[y * 100 + x] = v;
+      }
+    }
     lv_obj_invalidate(vMascotCanvas);
   }
 }
