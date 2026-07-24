@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include "i2c_bsp.h"
 #include "src/tca9554/esp_io_expander_tca9554.h"
+#include "power.h"                                 // shared TCA9554 handle (g_io_expander, board_expander)
 #include "src/codec_board/codec_board.h"
 #include "src/codec_board/codec_init.h"
 #include "src/esp_codec_dev/include/esp_codec_dev.h"
@@ -17,17 +18,18 @@
 
 static esp_codec_dev_handle_t g_playback = NULL;
 static esp_codec_dev_handle_t g_record   = NULL;
-static esp_io_expander_handle_t g_io_expander = NULL;
+// g_io_expander (the shared TCA9554 handle) lives in power.h — power_begin() already
+// created it and latched SYS_EN (EXIO6) by the time audio_init() runs.
 static int g_out_vol = 80;                        // speaker volume 0..100 (screen ④ +/-)
 
 // Set up the speaker-amp enable line (TCA9554 pin 7). Without the amp on the
-// ES8311 plays but nothing reaches the speaker.
+// ES8311 plays but nothing reaches the speaker. Reuses the shared expander so we
+// don't add the same I2C device twice.
 static bool audio_amp_enable() {
-  i2c_master_bus_handle_t bus = NULL;
-  if (i2c_master_get_bus_handle(0, &bus) != ESP_OK) return false;
-  if (esp_io_expander_new_i2c_tca9554(bus, ESP_IO_EXPANDER_I2C_TCA9554_ADDRESS_000, &g_io_expander) != ESP_OK) return false;
-  esp_io_expander_set_dir(g_io_expander, IO_EXPANDER_PIN_NUM_7, IO_EXPANDER_OUTPUT);
-  esp_io_expander_set_level(g_io_expander, IO_EXPANDER_PIN_NUM_7, 1);
+  esp_io_expander_handle_t io = board_expander();
+  if (!io) return false;
+  esp_io_expander_set_dir(io, PWR_AMP_EXIO, IO_EXPANDER_OUTPUT);
+  esp_io_expander_set_level(io, PWR_AMP_EXIO, 1);
   return true;
 }
 

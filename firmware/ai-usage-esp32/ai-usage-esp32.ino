@@ -25,6 +25,7 @@
 #include "config.h"
 #include "mascot.h"
 #include "net.h"
+#include "power.h"                            // battery power latch (SYS_EN) + PWR button
 #include "audio.h"
 #include "voice.h"
 
@@ -850,11 +851,47 @@ static void ui_setup_screen() {
 static unsigned long g_lastPoll = 0;
 static unsigned long g_last_usb_ms = 0;   // last USB frame (0 = none)
 
+/* ---------------- physical buttons (BOOT = GPIO0; PWR handled in power.h) -------- */
+// Switch the tileview to the next screen (wraps 4 -> 0). Runs under the LVGL lock.
+static void screen_next() {
+  if (!g_tv) return;
+  if (aiusage_lvgl_lock(-1)) {
+    lv_obj_t *act = lv_tileview_get_tile_act(g_tv);
+    int idx = 0;
+    for (int i = 0; i < 4; i++) if (act == tile[i]) { idx = i; break; }
+    lv_obj_set_tile(g_tv, tile[(idx + 1) % 4], LV_ANIM_ON);
+    aiusage_lvgl_unlock();
+  }
+}
+
+// Poll the BOOT button (GPIO0, active LOW). Short press -> next screen; hold >=1.5 s
+// -> reopen the Wi-Fi setup portal (same path as long-pressing the brand). GPIO0 is
+// only a strapping pin at reset — reading it at runtime is safe.
+static void boot_poll() {
+  static bool     inited  = false;
+  static bool     acted   = false;
+  static uint32_t down_ms = 0;
+  if (!inited) { pinMode(0, INPUT_PULLUP); inited = true; }
+  bool pressed = (digitalRead(0) == LOW);
+  if (pressed) {
+    if (down_ms == 0) { down_ms = millis(); acted = false; }
+    else if (!acted && millis() - down_ms >= 1500) { acted = true; g_reprovision = true; }
+  } else {
+    if (down_ms != 0 && !acted) screen_next();
+    down_ms = 0;
+    acted   = false;
+  }
+}
+
 void setup() {
   Serial.setRxBufferSize(2048);   // HWCDC default RX is 256B; USB frames are ~1KB
   Serial.begin(115200);
   Serial.println("\n=== AI-USAGE-BAR (3-screen) boot (" __DATE__ " " __TIME__ ") ===");
   i2c_master_Init();
+  // Latch the battery rail ON *first* (SYS_EN/EXIO6 high) so a brief PWR press boots
+  // the board on battery — before the slow display/Wi-Fi bring-up. No-op on USB.
+  Serial.println(power_begin() ? "[power] SYS_EN latched (EXIO6 high) — battery power held"
+                               : "[power] SYS_EN latch FAILED (expander not found)");
   lvgl_port_init();
   lcd_bl_pwm_bsp_init(LCD_PWM_MODE_255);
 
@@ -876,6 +913,11 @@ void setup() {
 }
 
 void loop() {
+  // Physical buttons: PWR (short = screen sleep, hold = power off) + BOOT (short =
+  // next screen, hold = Wi-Fi portal). Cheap polls, run every ~50 ms loop tick.
+  power_poll_pwr();
+  boot_poll();
+
   // USB-serial transport (preferred when frames arrive): the Mac pushes /usage
   // frames over the USB cable; they drive the display even with no Wi-Fi (office).
   UsageState uframe;
