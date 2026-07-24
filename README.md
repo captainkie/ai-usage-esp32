@@ -270,14 +270,19 @@ off" only takes effect on battery.
   typing its IP), and a TF-card config file — so switching between locations
   needs no re-typing at all.
 - **Bluetooth (BLE) transport** *(planned)* — a wireless, network-free link to the Mac.
-- **Voice AI assistant — "Pixie"** *(Phase 1 in progress)* — say **"Jarvis"** or tap → ask → Pixie
-  speaks Claude's answer, with STT + TTS free + local on your Mac. The board's dual-mic array + audio
-  codec (ES7210 ADC / ES8311 DAC + speaker header) do the ears + mouth. The assistant then grows:
-  - **"Pixie" custom wake word** — Phase 1 ships on the stock, offline **"Jarvis"** WakeNet word first;
-    the brand-matching **"Pixie"** wake word needs a custom model (a fast-follow).
-  - **Multi-provider (GPT / Gemini / Kimi) + an AI-settings screen ④** — pick the brain per query.
-  - **Voice control** — "lock my Mac", "switch to Codex" — drive the device + Mac by voice.
-  - **Proactive spoken announcements** — usage / reset alerts Pixie says out loud.
+- **Voice AI assistant — "Pixie"** *(working — tap to talk)* — tap the mic → ask → Pixie speaks
+  Claude's answer, with STT + TTS free + local on your Mac (whisper **`medium`** for accurate Thai,
+  macOS `say` for a female voice). The board's dual-mic array + audio codec (ES7210 ADC / ES8311 DAC
+  + speaker) are the ears + mouth. **Live web answers are on** — ask for today's gold price or the
+  weather and Pixie searches the web before she answers. From here she grows into a real assistant:
+  - **A new face** — Pixie becomes a cute glasses-wearing assistant on screen ④, replacing the pixel
+    runner *(design done; on-device sprite in progress)*.
+  - **"Pixie" wake word** — call her name hands-free; tap-to-talk stays as the reliable default.
+  - **Provider / model switch** — pick the brain per query (Claude / Codex / Gemini) from screen ④.
+  - **A real assistant — tool-calling** *(the big one)* — give Pixie tools so she *does* things: open
+    apps on the Mac by voice, check your mail, know your next meeting, even live in a team Discord.
+    Read-only actions run right away; anything that changes things or sends outward asks first. See
+    [`docs/superpowers/specs/2026-07-24-pixie-assistant-platform-roadmap.md`](docs/superpowers/specs/2026-07-24-pixie-assistant-platform-roadmap.md).
 
 ## Privacy
 
