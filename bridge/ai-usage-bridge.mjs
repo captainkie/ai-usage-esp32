@@ -302,6 +302,14 @@ let lastGoodAt = 0;
 // recover instead of hammering it every cycle. Reset on the next success.
 let usageBackoffUntil = 0;
 let usageBackoffMs = 0;
+// Gentle cadence for the shared, rate-limited usage endpoint: poll at most this often
+// on success (the 5h/7d window %s move slowly, so 2 min is plenty and halves the 429
+// pressure vs. polling every payload rebuild). A reading younger than USAGE_FRESH_MS
+// still shows LIVE — CACHED only when the data is genuinely old, so a transient 429
+// (very common on a token shared with the menu-bar app + Claude Code) no longer flags
+// CACHED on every cycle.
+const USAGE_POLL_MS  = 120_000;   // min gap between successful usage polls
+const USAGE_FRESH_MS = 300_000;   // reading <5 min old = LIVE; older = CACHED
 
 // Persist last-known-good to disk so a bridge *restart* (or a cold start during a
 // 429) still shows the last real reading instead of blanking to "no live data".
@@ -336,8 +344,10 @@ async function buildPayload() {
     try { c.model = prettyModel(await currentModelId()); } catch { /* keep null */ }
     try { c.effort = await currentEffort(); } catch { /* keep null */ }
 
-    // Usage: fetch unless we're in a backoff window. On 429, grow the backoff so
-    // we stop adding pressure and let the limit recover.
+    // Usage: poll on a gentle cadence. The `usageBackoffUntil` gate now serves double
+    // duty — after a SUCCESS we push it out by USAGE_POLL_MS (steady, low-pressure
+    // cadence); after a FAILURE (e.g. 429) we grow a backoff window instead. Either
+    // way we don't re-hit the shared, rate-limited endpoint until the gate opens.
     let freshUsage = false;
     if (Date.now() >= usageBackoffUntil) {
       try {
@@ -345,26 +355,27 @@ async function buildPayload() {
         c.five_hour = usage.five_hour ? win(usage.five_hour) : null;
         c.seven_day = usage.seven_day ? win(usage.seven_day) : null;
         freshUsage = true;
-        usageBackoffMs = 0; usageBackoffUntil = 0;   // recovered
+        usageBackoffMs = 0; usageBackoffUntil = Date.now() + USAGE_POLL_MS;   // steady cadence
       } catch (e) {
         usageBackoffMs = Math.min((usageBackoffMs || 15_000) * 2, 600_000);
         usageBackoffUntil = Date.now() + usageBackoffMs;
         c.error = e.message;                          // e.g. "http 429" / "unauthorized"
       }
-    } else {
-      c.error = "rate-limited (backing off)";
     }
 
-    // Sticky last-known-good: keep showing the last real reading instead of
-    // blanking — but be HONEST that it's stale rather than pretending it's live.
+    // Sticky last-known-good: keep showing the last real reading instead of blanking.
     for (const k of ["model", "effort", "five_hour", "seven_day"]) {
       if (c[k] == null) c[k] = lastGoodClaude[k];
       else lastGoodClaude[k] = c[k];
     }
-    if (freshUsage && c.five_hour) { lastGoodAt = Date.now(); saveLastGood(); delete c.error; }
-    // stale = we're serving a persisted usage reading, not a fresh one this cycle.
-    c.stale = !freshUsage && !!(c.five_hour || c.seven_day);
-    if (c.stale) c.usage_age_s = lastGoodAt ? Math.round((Date.now() - lastGoodAt) / 1000) : null;
+    if (freshUsage && c.five_hour) { lastGoodAt = Date.now(); saveLastGood(); }
+    // CACHED only when the reading is genuinely OLD (we've been failing a while), not
+    // merely "didn't poll this cycle" — otherwise the gentle cadence + any transient
+    // 429 would flag CACHED constantly. A reading within USAGE_FRESH_MS stays LIVE.
+    const usageAgeMs = lastGoodAt ? Date.now() - lastGoodAt : Infinity;
+    c.stale = !!(c.five_hour || c.seven_day) && usageAgeMs > USAGE_FRESH_MS;
+    if (c.stale) c.usage_age_s = Number.isFinite(usageAgeMs) ? Math.round(usageAgeMs / 1000) : null;
+    else delete c.error;   // fresh-enough reading → don't surface a transient poll error
   }
 
   let system = null;
@@ -493,9 +504,8 @@ function detectUsbPort() {
 // Bidirectional USB: push /usage frames to the device AND read Remote actions back
 // from it (`@ACT` lines), so the Remote works over the cable with no Wi-Fi.
 function startUsbWriter() {
-  const port = detectUsbPort();
-  if (!port) return;
-  let fd = null, rs = null, buf = "";
+  if (process.env.USB === "0") return;                 // USB explicitly disabled
+  let fd = null, rs = null, buf = "", port = null;
   const close = () => {
     try { if (rs) rs.destroy(); } catch { /* ignore */ }
     try { if (fd !== null) closeSync(fd); } catch { /* ignore */ }
@@ -509,7 +519,12 @@ function startUsbWriter() {
     if (!v.ok) return;
     execFile(v.cmd.file, v.cmd.args, { timeout: 5000 }, () => {});   // fire-and-forget
   };
+  // Re-detects the port every call, so a board plugged in AFTER the bridge started
+  // (or one that re-enumerated) is picked up on the next tick — no restart needed.
+  // Was: detect once at startup and give up forever if the board wasn't present yet.
   const openPort = () => {
+    port = detectUsbPort();
+    if (!port) return;                                 // no board yet — retry next tick
     try {
       execFileSync("stty", ["-f", port, "115200", "raw", "-echo"]);   // raw; no shell (injection-safe)
       fd = openSync(port, "r+");                        // read + write

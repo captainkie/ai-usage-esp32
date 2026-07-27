@@ -167,8 +167,11 @@ tiles are configurable. Two tiles are worth a note:
 **Tap the LIVE indicator** (the Wi-Fi indicator, top-right of any screen) to reopen
 the setup portal — change Wi-Fi or update the token, no reflashing needed.
 
-The ESP32 can't join **WPA2-Enterprise** or captive-portal corporate Wi-Fi. On a
-restrictive office network you have two tether-free options:
+The ESP32 can't join **WPA2-Enterprise** or captive-portal corporate Wi-Fi. And even a
+normal-looking office network can **isolate clients** (AP / VLAN isolation): Pixie joins
+fine but can't reach your Mac over the LAN — you'll see it stuck on "connecting…" even
+though Wi-Fi is up. On any of these restrictive office networks you have two tether-free
+options:
 
 - **USB (no network at all):** keep the device plugged into your Mac over USB and
   run the bridge — it **auto-detects the USB port** and pushes updates over the
@@ -265,10 +268,10 @@ off" only takes effect on battery.
   already powered by; no Wi-Fi or pairing needed. Auto-detected by the bridge, and now
   **bidirectional** — it carries live data to the device **and Remote actions back**.
   Ideal for carrying a single device between home and office.
-- **Seamless connectivity** *(in progress / planned)* — auto-join multiple saved
-  networks (WiFiMulti: home / office / hotspot), auto-discover the Mac via mDNS (no
-  typing its IP), and a TF-card config file — so switching between locations
-  needs no re-typing at all.
+- **Seamless connectivity** *(available)* — auto-joins the strongest of several saved
+  networks (WiFiMulti: home / office / hotspot) and **re-joins automatically when you
+  move — no reboot needed**, auto-discovers the Mac via mDNS (no typing its IP), and
+  seeds it all from a TF-card config file, so switching locations needs nothing typed.
 - **Bluetooth (BLE) transport** *(planned)* — a wireless, network-free link to the Mac.
 - **Voice AI assistant — "Pixie"** *(working — tap to talk)* — tap the mic → ask → Pixie speaks
   Claude's answer, with STT + TTS free + local on your Mac (whisper **`medium`** for accurate Thai,

@@ -278,6 +278,27 @@ static bool net_discover() {
   return true;
 }
 
+// Wi-Fi upkeep for a device that moves between locations. WiFiMulti.run() only ran
+// once at boot (net_begin); the ESP32 core's auto-reconnect only retries the LAST
+// AP, never a different saved one — so a board carried home->office (or one whose
+// office AP wasn't ready within the 8 s boot window) stays stuck on "connecting...".
+// Call every loop tick: while disconnected, periodically re-run WiFiMulti so it
+// re-scans and joins whichever saved network is now in range. Throttled so the scan
+// doesn't churn; does nothing while connected.
+static void net_wifi_maintain() {
+  if (WiFi.status() == WL_CONNECTED) return;
+  static uint32_t last = 0;
+  uint32_t now = millis();
+  if (last != 0 && now - last < WIFI_RETRY_INTERVAL_MS) return;
+  last = now;
+  g_wifiMulti.run(WIFI_JOIN_TIMEOUT_MS);          // re-scan + join the strongest saved AP in range
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("[net] (re)joined %s\n", WiFi.SSID().c_str());
+    g_mdns_up = false;                            // new LAN -> re-discover the Mac bridge via mDNS
+    net_discover();
+  }
+}
+
 // GET http://<bridge>/usage and fill `out`. Returns true on success.
 static bool net_fetch(UsageState *out) {
   memset(out, 0, sizeof(*out));
