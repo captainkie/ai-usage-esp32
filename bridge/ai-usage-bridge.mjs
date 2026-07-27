@@ -372,10 +372,14 @@ async function buildPayload() {
     // CACHED only when the reading is genuinely OLD (we've been failing a while), not
     // merely "didn't poll this cycle" — otherwise the gentle cadence + any transient
     // 429 would flag CACHED constantly. A reading within USAGE_FRESH_MS stays LIVE.
+    // A terminal auth failure (401/403 → "unauthorized") never self-recovers the way a
+    // 429 does, so surface it immediately instead of hiding it behind the fresh window:
+    // mark stale + keep the error so a revoked/expired token stays diagnosable via /usage.
     const usageAgeMs = lastGoodAt ? Date.now() - lastGoodAt : Infinity;
-    c.stale = !!(c.five_hour || c.seven_day) && usageAgeMs > USAGE_FRESH_MS;
+    const authFailed = c.error === "unauthorized";
+    c.stale = !!(c.five_hour || c.seven_day) && (usageAgeMs > USAGE_FRESH_MS || authFailed);
     if (c.stale) c.usage_age_s = Number.isFinite(usageAgeMs) ? Math.round(usageAgeMs / 1000) : null;
-    else delete c.error;   // fresh-enough reading → don't surface a transient poll error
+    else if (!authFailed) delete c.error;   // hide a transient 429/timeout on a fresh reading; keep auth errors
   }
 
   let system = null;
