@@ -962,6 +962,11 @@ void loop() {
   }
   bool usbFresh = g_last_usb_ms != 0 && (millis() - g_last_usb_ms < 30000);
 
+  // Follow the user between networks: (re)join a saved AP whenever Wi-Fi is down, so a
+  // board carried home<->office reconnects without a reboot. Skipped while USB frames
+  // are fresh (office-over-cable already works, and a scan would block the USB read).
+  if (!usbFresh) net_wifi_maintain();
+
   if (!usbFresh && (g_lastPoll == 0 || millis() - g_lastPoll > POLL_INTERVAL_MS)) {
     g_lastPoll = millis();
     UsageState tmp;
