@@ -9,7 +9,9 @@
 // ---- multi-network Wi-Fi store (WiFiMulti + TF-card seed) ----
 #define MAX_WIFI_APS         6         // max saved networks (home/office/hotspot/…)
 #define WIFI_JOIN_TIMEOUT_MS 8000      // WiFiMulti.run() connect timeout per boot
-#define WIFI_RETRY_INTERVAL_MS 15000   // while disconnected, re-run WiFiMulti this often (follow home<->office)
+#define WIFI_RETRY_INTERVAL_MS 15000   // base gap between reconnect attempts while disconnected (follow home<->office)
+#define WIFI_RETRY_JOIN_MS     3000    // bounded join for the in-loop retry — keeps PWR/touch responsive when offline
+#define WIFI_RETRY_MAX_MS      300000  // back off up to 5 min so a nearby-but-unjoinable AP doesn't churn/drain battery
 #define SD_CONFIG_PATH       "/sdcard/pixie.json"   // TF-card root via the SDMMC /sdcard mount
 
 typedef struct { char ssid[33]; char pass[64]; } WifiCred;

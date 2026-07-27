@@ -21,6 +21,9 @@ static WiFiManagerParameter *g_pHost = nullptr;
 static WiFiManagerParameter *g_pPort = nullptr;
 static WiFiManagerParameter *g_pTok  = nullptr;
 static WiFiMulti             g_wifiMulti;
+static int      g_naps = 0;             // saved AP count — skip reconnect scans when nothing is stored
+static bool     g_host_pinned = false;  // user typed a bridge host -> don't let mDNS overwrite it
+static uint32_t g_wifi_retry_ms = 0;    // current reconnect backoff (grows while offline, resets on join)
 
 static void net_save_params() {
   if (g_pHost) g_host  = g_pHost->getValue();
@@ -85,12 +88,14 @@ static void net_begin() {
   g_token = g_prefs.getString("token", g_token);
   bool provisioned = g_prefs.getBool("prov", false) || g_host.length() > 0;
   g_prefs.end();
+  g_host_pinned = (g_host.length() > 0);   // a non-blank host is user/card-set; mDNS must not clobber it
 
   // 3. build WiFiMulti from the NVS AP store
   static WifiCred aps[MAX_WIFI_APS];   // static: keep it off the boot-path stack
   int naps = wifistore_load(aps, MAX_WIFI_APS);
   for (int i = 0; i < naps; i++) g_wifiMulti.addAP(aps[i].ssid, aps[i].pass);
   if (naps > 0) provisioned = true;
+  g_naps = naps;   // let net_wifi_maintain skip scanning when nothing is saved
 
   // 4. connect to the strongest reachable saved network
   if (naps > 0) {
@@ -282,20 +287,34 @@ static bool net_discover() {
 // once at boot (net_begin); the ESP32 core's auto-reconnect only retries the LAST
 // AP, never a different saved one — so a board carried home->office (or one whose
 // office AP wasn't ready within the 8 s boot window) stays stuck on "connecting...".
-// Call every loop tick: while disconnected, periodically re-run WiFiMulti so it
-// re-scans and joins whichever saved network is now in range. Throttled so the scan
-// doesn't churn; does nothing while connected.
+// Called every loop tick while disconnected: re-run WiFiMulti so it re-scans and joins
+// whichever saved network is now in range, then re-resolve the Mac via mDNS.
+//
+// Kept cheap + responsive for an often-offline giveaway: the in-loop join is bounded
+// (WIFI_RETRY_JOIN_MS, not the 8 s boot timeout) so the superloop — and the PWR/BOOT
+// buttons polled in it — never stall for long; the retry interval backs off
+// (15 s -> ... -> WIFI_RETRY_MAX_MS) while a nearby AP won't join, so it doesn't churn
+// the radio or drain the battery; and it does nothing at all when connected or with
+// no saved APs.
 static void net_wifi_maintain() {
-  if (WiFi.status() == WL_CONNECTED) return;
+  if (WiFi.status() == WL_CONNECTED) { g_wifi_retry_ms = 0; return; }  // connected -> reset backoff
+  if (g_naps == 0) return;                                             // nothing saved to join -> don't scan
   static uint32_t last = 0;
   uint32_t now = millis();
-  if (last != 0 && now - last < WIFI_RETRY_INTERVAL_MS) return;
+  uint32_t wait = g_wifi_retry_ms ? g_wifi_retry_ms : WIFI_RETRY_INTERVAL_MS;
+  if (last != 0 && now - last < wait) return;
   last = now;
-  g_wifiMulti.run(WIFI_JOIN_TIMEOUT_MS);          // re-scan + join the strongest saved AP in range
+  g_wifiMulti.run(WIFI_RETRY_JOIN_MS);   // bounded join so PWR/touch stay responsive while offline
   if (WiFi.status() == WL_CONNECTED) {
+    g_wifi_retry_ms = 0;
     Serial.printf("[net] (re)joined %s\n", WiFi.SSID().c_str());
-    g_mdns_up = false;                            // new LAN -> re-discover the Mac bridge via mDNS
-    net_discover();
+    // Re-resolve the Mac on the new LAN. Do NOT reset g_mdns_up — the running mDNS
+    // responder re-binds to the new STA IP, and MDNS.begin() would just fail
+    // (already-initialized) and kill discovery. Keep a user-typed host untouched.
+    if (!g_host_pinned) net_discover();
+  } else {
+    uint32_t next = g_wifi_retry_ms ? g_wifi_retry_ms * 2 : WIFI_RETRY_INTERVAL_MS;
+    g_wifi_retry_ms = next > WIFI_RETRY_MAX_MS ? WIFI_RETRY_MAX_MS : next;   // back off
   }
 }
 
@@ -315,7 +334,7 @@ static bool net_fetch(UsageState *out) {
   if (code != 200) {
     snprintf(out->err, sizeof(out->err), "http %d", code);
     http.end();
-    net_discover();   // maybe the Mac's IP changed (moved locations) — refresh for next poll
+    if (!g_host_pinned) net_discover();   // Mac's IP may have changed (moved) — refresh, but keep a user-typed host
     return false;
   }
 
