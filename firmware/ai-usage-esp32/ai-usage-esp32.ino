@@ -21,6 +21,7 @@
 #include "src/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
 #include <lvgl.h>
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>                    // loop watchdog (see setup/loop)
 
 #include "config.h"
 #include "mascot.h"
@@ -941,9 +942,30 @@ void setup() {
   Serial.println(audio_init() ? "[audio] codec ready (mic+speaker)" : "[audio] codec init FAILED");
 
   net_provider_refresh();   // show the active voice provider on screen ④'s chip
+
+  // Arm the loop watchdog LAST, so the slow one-time bring-up above (display, Wi-Fi
+  // join, codec) can't trip it. A wedged superloop is otherwise invisible: LVGL draws
+  // from its own task, so the dashboard keeps rendering its last frame while nothing
+  // polls the bridge — the failure looks like a permanent "connecting...", and only
+  // the physical reset button clears it. idle_core_mask 0: watch this task only.
+  esp_task_wdt_config_t wdt = {
+    .timeout_ms     = LOOP_WDT_TIMEOUT_MS,
+    .idle_core_mask = 0,
+    .trigger_panic  = true,
+  };
+  // reconfigure first: the core normally starts the TWDT for us, and calling
+  // esp_task_wdt_init() on an already-running timer logs a red ESP_LOGE that reads
+  // like a real boot failure. init() is only the fallback for a build that didn't.
+  esp_err_t we = esp_task_wdt_reconfigure(&wdt);
+  if (we == ESP_ERR_INVALID_STATE) we = esp_task_wdt_init(&wdt);   // TWDT not started yet
+  if (we == ESP_OK) we = esp_task_wdt_add(NULL);
+  Serial.printf("[wdt] loop watchdog %s (%d s)\n",
+                we == ESP_OK ? "armed" : "FAILED", LOOP_WDT_TIMEOUT_MS / 1000);
 }
 
 void loop() {
+  esp_task_wdt_reset();   // superloop is alive
+
   // Physical buttons: PWR (short = screen sleep, hold = power off) + BOOT (short =
   // next screen, hold = Wi-Fi portal). Cheap polls, run every ~50 ms loop tick.
   power_poll_pwr();
@@ -988,9 +1010,14 @@ void loop() {
 
   // Drain a voice request (from a "@VOICE" serial line or a touch): record ->
   // POST /voice -> play the reply. Blocking, but outside the LVGL lock.
+  // A turn blocks far past the watchdog window on purpose (4 s record + 30 s POST +
+  // 20 s reply read + playback), so step out of the WDT and re-arm after. Each stage
+  // carries its own timeout, so this can't become an unbounded hole.
   if (g_voice_trigger) {
     g_voice_trigger = false;
+    esp_task_wdt_delete(NULL);
     voice_ask();
+    esp_task_wdt_add(NULL);
   }
 
   // Tap the provider chip -> cycle the active voice provider (Claude/GLM/…).
@@ -1000,10 +1027,14 @@ void loop() {
   }
 
   // Long-press the AI-USAGE brand -> reopen the setup portal (outside LVGL lock).
+  // Same deal: the portal blocks until someone saves or WM_PORTAL_TIMEOUT_S elapses.
   if (g_reprovision) {
     g_reprovision = false;
     Serial.println("[net] reprovision: opening setup portal (join AI-Usage-Bar-Setup)");
+    esp_task_wdt_delete(NULL);
     net_portal();
+    esp_task_wdt_add(NULL);
+    Serial.println("[net] portal closed — back to polling");
   }
 
   delay(50);

@@ -5,6 +5,18 @@
 // ---- Wi-Fi provisioning ----
 #define WM_AP_NAME       "AI-Usage-Bar-Setup"   // captive-portal SSID
 #define WM_AP_TIMEOUT_S  600                     // portal timeout before retrying STA
+// On-demand portal (tap LIVE / long-press BOOT). Shorter than the first-run portal:
+// startConfigPortal() blocks loop(), and the LVGL task keeps redrawing the last frame,
+// so an accidental open looks exactly like a frozen dashboard. Long enough to retype a
+// network + token on purpose, short enough that a stray tap heals itself.
+#define WM_PORTAL_TIMEOUT_S 300
+
+// ---- loop watchdog ----
+// Reboot if the superloop stops making progress. Sized above the worst legitimate
+// blocking stretch in loop() (HTTP fetch + bounded Wi-Fi rejoin + mDNS queries +
+// an action POST ~ 21 s). voice_ask() and net_portal() block far longer by design,
+// so loop() unsubscribes from the WDT around those two and re-arms after.
+#define LOOP_WDT_TIMEOUT_MS 60000
 
 // ---- multi-network Wi-Fi store (WiFiMulti + TF-card seed) ----
 #define MAX_WIFI_APS         6         // max saved networks (home/office/hotspot/…)

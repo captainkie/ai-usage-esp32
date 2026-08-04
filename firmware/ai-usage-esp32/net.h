@@ -134,8 +134,15 @@ static void net_begin() {
 }
 
 // Re-open the portal on demand (e.g. long-press a side button).
+// MUST set a timeout: startConfigPortal() blocks the caller until someone joins the
+// AP and saves. This runs from loop(), while the LVGL render task keeps drawing on
+// its own — so without a timeout a single stray tap on the LIVE indicator wedges the
+// superloop forever behind a dashboard that still looks alive, and only the physical
+// reset button gets it back. Was: no timeout here (the first-run portal in net_begin
+// has always set one).
 static void net_portal() {
   WiFiManager wm;
+  wm.setConfigPortalTimeout(WM_PORTAL_TIMEOUT_S);
   static WiFiManagerParameter pHost("host", "Mac bridge IP", g_host.c_str(), 24);
   static WiFiManagerParameter pPort("port", "Bridge port", g_port.c_str(), 6);
   static WiFiManagerParameter pTok("token", "Pairing token (from the Mac bridge)", g_token.c_str(), 40);
