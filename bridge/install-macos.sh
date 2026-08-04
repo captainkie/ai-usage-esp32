@@ -30,7 +30,19 @@ if [ -n "${REMOTE:-}" ]; then
   REMOTE_ENV="<key>REMOTE</key><string>${REMOTE}</string>"
 fi
 
-mkdir -p "$HOME/Library/LaunchAgents"
+LOG="$HOME/Library/Logs/ai-usage-bridge.log"
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
+
+# A hand-started copy (nohup) still holding the port makes the agent die with
+# EADDRINUSE on every relaunch, and KeepAlive turns that into a silent respawn
+# loop — the agent looks like it "hangs and never binds". Clear the port first.
+if command -v lsof >/dev/null && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "! Port $PORT is already in use — stopping the old bridge first:"
+  lsof -nP -iTCP:"$PORT" -sTCP:LISTEN | sed 's/^/    /'
+  for pid in $(lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN); do kill "$pid" 2>/dev/null || true; done
+  sleep 2
+fi
+
 cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -41,20 +53,41 @@ cat > "$PLIST" <<EOF
   <key>EnvironmentVariables</key><dict><key>PORT</key><string>$PORT</string>$REMOTE_ENV</dict>
   <key>RunAtLoad</key>        <true/>
   <key>KeepAlive</key>        <true/>
-  <key>StandardOutPath</key>  <string>/tmp/ai-usage-bridge.log</string>
-  <key>StandardErrorPath</key><string>/tmp/ai-usage-bridge.err</string>
+  <key>StandardOutPath</key>  <string>$LOG</string>
+  <key>StandardErrorPath</key><string>$LOG</string>
 </dict>
 </plist>
 EOF
 
-launchctl unload "$PLIST" 2>/dev/null || true
-launchctl load "$PLIST"
+# bootout/bootstrap is the supported path; load/unload is legacy and can fail
+# quietly on current macOS. Fall back so older systems still work.
+UID_NUM="$(id -u)"
+if launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1; then
+  launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
+fi
+if ! launchctl bootstrap "gui/$UID_NUM" "$PLIST" 2>/dev/null; then
+  launchctl unload "$PLIST" 2>/dev/null || true
+  launchctl load "$PLIST"
+fi
+launchctl kickstart -k "gui/$UID_NUM/$LABEL" >/dev/null 2>&1 || true
+
+# Prove it actually bound instead of reporting success blindly.
+BOUND=""
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then BOUND=1; break; fi
+  sleep 1
+done
+if [ -z "$BOUND" ]; then
+  echo "✗ Agent loaded but nothing is listening on :$PORT. Last log lines:" >&2
+  tail -20 "$LOG" >&2 2>/dev/null || true
+  exit 1
+fi
 
 IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo '<mac-ip>')"
 
-echo "✓ Bridge installed and running."
+echo "✓ Bridge installed and listening on :$PORT."
 echo "  Endpoint:  http://$IP:$PORT/usage"
-echo "  Logs:      /tmp/ai-usage-bridge.log"
+echo "  Logs:      $LOG"
 if [ "${REMOTE:-}" = "0" ]; then
   echo "  Remote:    disabled (dashboard only)"
 else
@@ -75,4 +108,4 @@ else
   fi
   echo "             Dashboard only? re-run:  REMOTE=0 ./install-macos.sh $PORT"
 fi
-echo "  Uninstall: launchctl unload \"$PLIST\" && rm \"$PLIST\""
+echo "  Uninstall: launchctl bootout \"gui/$UID_NUM/$LABEL\" && rm \"$PLIST\""
