@@ -776,9 +776,16 @@ static void render_cb(lv_timer_t *t) {
   // Status chip: which link is live, plus the CACHED staleness flag. Staleness
   // describes the usage DATA, not the link, so transport.h stays out of it and the
   // suffix is composed here.
+  //
+  // The bullet MUST stay in its own string literal: a \x escape swallows every hex
+  // digit that follows it, and "CACHED" starts with C-A-C. Written as one literal,
+  // "\xE2\x80\xA2CACHED" parses as \xA2CAC — out of range for a char, which clang
+  // rejects outright and xtensa-gcc silently truncates, putting a garbage byte on the
+  // panel where the separator should be (it rendered as an empty box). Splitting the
+  // literal terminates the escape.
   char chip[24];
   if (have && st.ok && pr->stale) {
-    snprintf(chip, sizeof(chip), LV_SYMBOL_WIFI " %s\xE2\x80\xA2CACHED", tr.label);
+    snprintf(chip, sizeof(chip), LV_SYMBOL_WIFI " %s\xE2\x80\xA2" "CACHED", tr.label);
     lv_label_set_text(lblLive, chip);
     lv_obj_set_style_text_color(lblLive, LVC(COL_WARN), 0);
   } else {
