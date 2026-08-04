@@ -1011,6 +1011,16 @@ void loop() {
   // are fresh (office-over-cable already works, and a scan would block the USB read).
   if (!usbFresh) net_wifi_maintain();
 
+  // Feed the watchdog between blocking network stages, not just once per iteration.
+  // Each stage is individually bounded but they add up: a bounded rejoin (~6 s incl.
+  // the scan) + a fetch (2x6 s HTTP plus up to two ~3 s mDNS queries) + an action POST
+  // (2x6 s) + a provider cycle (three round trips, 2x6 s each) can exceed 60 s in one
+  // pass on a network that black-holes packets. Without these resets the WDT would
+  // reboot a device that is slow but making progress — a spurious reboot is worse than
+  // the freeze it exists to catch. Resetting between stages keeps the 60 s window
+  // meaning "one call never returned", which is the only thing worth rebooting for.
+  esp_task_wdt_reset();
+
   if (!usbFresh && (g_lastPoll == 0 || millis() - g_lastPoll > POLL_INTERVAL_MS)) {
     g_lastPoll = millis();
     UsageState tmp;
@@ -1020,6 +1030,7 @@ void loop() {
     else    { g_state.ok = false; strlcpy(g_state.err, tmp.err, sizeof(g_state.err)); }
     portEXIT_CRITICAL(&g_mux);
     if (!ok) Serial.printf("[net] fetch failed: %s\n", tmp.err);
+    esp_task_wdt_reset();
   }
 
   // Publish the link verdict for the render task. HWCDC::isPlugged() is SOF/timer
@@ -1050,6 +1061,7 @@ void loop() {
   if (g_action >= 0) {
     int a = g_action; g_action = -1;
     if (!net_action(ACTION_BODY[a])) Serial.printf("[action] %d failed\n", a);
+    esp_task_wdt_reset();
   }
 
   // Drain a voice request (from a "@VOICE" serial line or a touch): record ->
@@ -1065,9 +1077,12 @@ void loop() {
   }
 
   // Tap the provider chip -> cycle the active voice provider (Claude/GLM/…).
+  // Three HTTP round trips back to back (list, set, re-read), so it is the single
+  // longest WDT-subscribed stage in the loop — feed the watchdog after it.
   if (g_provider_cycle) {
     g_provider_cycle = false;
     net_provider_cycle();
+    esp_task_wdt_reset();
   }
 
   // Long-press the AI-USAGE brand -> reopen the setup portal (outside LVGL lock).
