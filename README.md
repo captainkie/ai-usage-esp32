@@ -181,16 +181,23 @@ options:
   (no Wi-Fi, no pairing). Perfect for carrying one device between home and office.
 - **Phone hotspot (2.4GHz):** a Wi-Fi fallback if you'd rather stay wireless.
 
-#### 📝 Note — "connecting…" has three different causes
+#### 📝 Note — when it can't reach your Mac, the panel says why
 
-They look identical on the panel, so read the serial log (115200 baud) to tell them
-apart. The error text after `[net] fetch failed:` is the whole diagnosis:
+Pixie names the problem and the fix on screen; you should not need a serial monitor.
+The status chip (top-right) shows which link is live — `USB` or `WI-FI` — and the line
+under the brand replaces the model name with the reason:
 
-| Serial line | What it means | What to do |
+| On the panel | What it means | What to do |
 |---|---|---|
-| `fetch failed: wifi` | Never joined the network. Usually a **wrong password**, or a 5 GHz-only / WPA2-Enterprise AP. | Re-enter the password (tap LIVE). Don't assume isolation — this one is almost always a typo. |
-| `fetch failed: http -1` | **Joined, but the network blocks device-to-device traffic** — this is client/VLAN isolation. mDNS may even find the bridge; the TCP connection is what gets refused. | Nothing to fix on your side. Use **USB** here. |
-| `fetch failed: no bridge` | Joined, but the Mac was never found. | Check the bridge is running; type the Mac's IP if mDNS is blocked. |
+| `USB ready • start the bridge on your Mac` | Cable is in and your Mac is there, but nothing is pushing data. | Run `./bridge/install-macos.sh`. |
+| `no wi-fi • plug in USB or tap to set up` | Never joined a network — usually a mistyped password. | Tap the chip and re-enter it. |
+| `network blocks this Mac • use USB` | Joined, but the network blocks device-to-device traffic (client/VLAN isolation). | Nothing to fix — use USB here. |
+| `bridge not found • check it's running` | Joined, but the Mac was never found. | Start the bridge, or type its IP. |
+| `pairing token rejected • tap to re-enter` | The token no longer matches the bridge. | Tap the chip and paste the current one. |
+
+Prefer one link over the other? Set `"transport": "auto" | "usb" | "wifi"` in
+`pixie.json`, or in the setup portal. A pinned link is never silently swapped — if it
+is unavailable the panel says so.
 
 Two things that silently kill the USB path, so check them before blaming the network:
 

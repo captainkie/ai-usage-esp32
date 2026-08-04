@@ -46,6 +46,7 @@ extern "C" const lv_font_t pixie_thai_16;
 static portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 static UsageState   g_state;
 static bool         g_have = false;
+static TransportState g_tr;               // published under g_mux; read by render_cb
 static int          g_provider = PV_CLAUDE;
 static int          g_mascot   = MASC_RUNNER;   // default companion on the usage screens (tap to change); Pixie is voice-screen-only
 
@@ -710,8 +711,10 @@ static void render_cb(lv_timer_t *t) {
   animT += RENDER_INTERVAL_MS;
 
   UsageState st;
+  TransportState tr;
   portENTER_CRITICAL(&g_mux);
   st = g_state;
+  tr = g_tr;
   bool have = g_have;
   portEXIT_CRITICAL(&g_mux);
 
@@ -738,8 +741,17 @@ static void render_cb(lv_timer_t *t) {
   lv_obj_set_style_text_color(lblFivePct,  LVC(util_color(tFive)),  0);
   lv_obj_set_style_text_color(lblSevenPct, LVC(util_color(tSeven)), 0);
 
-  // model + effort
-  if (have && pr->model[0])      lv_label_set_text(lblModel, pr->model);
+  // model + effort — when the link is unhealthy, say WHY and what to do about it
+  // rather than an indefinite "connecting...".
+  //
+  // The hint is checked FIRST, before the model name. On a failed fetch loop() keeps
+  // the previous providers block and only clears g_state.ok, so `have` stays true and
+  // pr->model stays populated — testing the model first would mean the hint never
+  // appeared again after the first successful poll. A healthy link produces an empty
+  // hint, so this cannot hide the model name during normal operation (including the
+  // CACHED/429 case, where the link itself is fine).
+  if (tr.hint[0])                lv_label_set_text(lblModel, tr.hint);
+  else if (have && pr->model[0]) lv_label_set_text(lblModel, pr->model);
   else if (have && !pr->linked)  lv_label_set_text(lblModel, "not linked");
   else if (have)                 lv_label_set_text(lblModel, "no live data");
   else                           lv_label_set_text(lblModel, "connecting...");
@@ -761,15 +773,18 @@ static void render_cb(lv_timer_t *t) {
   snprintf(rr, sizeof(rr), LV_SYMBOL_REFRESH " %s", r5); lv_label_set_text(lblFiveRst, rr);
   snprintf(rr, sizeof(rr), LV_SYMBOL_REFRESH " %s", r7); lv_label_set_text(lblSevenRst, rr);
 
-  // LIVE / CACHED indicator — dim + relabel to amber when the bridge is serving a
-  // stale last-known-good reading (usage endpoint 429-backing-off), so a frozen %
-  // never masquerades as live.
+  // Status chip: which link is live, plus the CACHED staleness flag. Staleness
+  // describes the usage DATA, not the link, so transport.h stays out of it and the
+  // suffix is composed here.
+  char chip[24];
   if (have && st.ok && pr->stale) {
-    lv_label_set_text(lblLive, LV_SYMBOL_WIFI " CACHED");
+    snprintf(chip, sizeof(chip), LV_SYMBOL_WIFI " %s\xE2\x80\xA2CACHED", tr.label);
+    lv_label_set_text(lblLive, chip);
     lv_obj_set_style_text_color(lblLive, LVC(COL_WARN), 0);
   } else {
-    lv_label_set_text(lblLive, LV_SYMBOL_WIFI " LIVE");
-    lv_obj_set_style_text_color(lblLive, LVC(have && st.ok ? COL_LIVE : 0x6B7180), 0);
+    snprintf(chip, sizeof(chip), LV_SYMBOL_WIFI " %s", tr.label);
+    lv_label_set_text(lblLive, chip);
+    lv_obj_set_style_text_color(lblLive, LVC(tr.healthy ? COL_LIVE : 0x6B7180), 0);
   }
 
   // pills
@@ -982,7 +997,7 @@ void loop() {
     Serial.printf("[usb] frame ok 5h=%d wk=%d\n",
                   uframe.p[PV_CLAUDE].five.util, uframe.p[PV_CLAUDE].seven.util);
   }
-  bool usbFresh = g_last_usb_ms != 0 && (millis() - g_last_usb_ms < 30000);
+  bool usbFresh = g_last_usb_ms != 0 && (millis() - g_last_usb_ms < USB_FRESH_MS);
 
   // Follow the user between networks: (re)join a saved AP whenever Wi-Fi is down, so a
   // board carried home<->office reconnects without a reboot. Skipped while USB frames
@@ -999,6 +1014,28 @@ void loop() {
     portEXIT_CRITICAL(&g_mux);
     if (!ok) Serial.printf("[net] fetch failed: %s\n", tmp.err);
   }
+
+  // Publish the link verdict for the render task. HWCDC::isPlugged() is SOF/timer
+  // based, so it separates "no cable" from "cable in, bridge not running" — the
+  // failure that looked identical to every other one on the panel.
+#if ARDUINO_USB_MODE == 1
+  bool usbPlugged = HWCDC::isPlugged();
+#else
+  bool usbPlugged = (bool)Serial;
+#endif
+  uint32_t usbAge = g_last_usb_ms ? (uint32_t)(millis() - g_last_usb_ms) : UINT32_MAX;
+  char errCopy[sizeof(g_state.err)];
+  bool haveCopy;
+  portENTER_CRITICAL(&g_mux);
+  strlcpy(errCopy, g_state.err, sizeof(errCopy));
+  haveCopy = g_have && g_state.ok;
+  portEXIT_CRITICAL(&g_mux);
+  TransportState tr = transport_evaluate(usbPlugged, usbAge,
+                                         WiFi.status() == WL_CONNECTED,
+                                         haveCopy, errCopy, g_transport_pref);
+  portENTER_CRITICAL(&g_mux);
+  g_tr = tr;
+  portEXIT_CRITICAL(&g_mux);
 
   // Drain the remote action queue OUTSIDE any LVGL lock. A tap in an LVGL
   // callback only sets g_action; the blocking HTTP POST happens here so the
