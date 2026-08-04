@@ -165,7 +165,9 @@ tiles are configurable. Two tiles are worth a note:
 ### Moving between networks (home ↔ office)
 
 **Tap the LIVE indicator** (the Wi-Fi indicator, top-right of any screen) to reopen
-the setup portal — change Wi-Fi or update the token, no reflashing needed.
+the setup portal — change Wi-Fi or update the token, no reflashing needed. The portal
+closes itself after 5 minutes, so an accidental tap can't leave the device stuck in
+setup mode.
 
 The ESP32 can't join **WPA2-Enterprise** or captive-portal corporate Wi-Fi. And even a
 normal-looking office network can **isolate clients** (AP / VLAN isolation): Pixie joins
@@ -176,9 +178,42 @@ options:
 - **USB (no network at all):** keep the device plugged into your Mac over USB and
   run the bridge — it **auto-detects the USB port** and pushes updates over the
   cable, and **carries Remote actions back** too, so screen ③ still drives your Mac
-  (no Wi-Fi, no pairing). Set `USB=0` to disable, or `USB_PORT=/dev/cu.…` to
-  pin it. Perfect for carrying one device between home and office.
+  (no Wi-Fi, no pairing). Perfect for carrying one device between home and office.
 - **Phone hotspot (2.4GHz):** a Wi-Fi fallback if you'd rather stay wireless.
+
+#### 📝 Note — when it can't reach your Mac, the panel says why
+
+Pixie names the problem and the fix on screen; you should not need a serial monitor.
+The status chip (top-right) shows which link is live — `USB` or `WI-FI` — and the line
+under the brand replaces the model name with the reason:
+
+| On the panel | What it means | What to do |
+|---|---|---|
+| `USB ready • start the bridge on your Mac` | Cable is in and your Mac is there, but nothing is pushing data. | Run `./bridge/install-macos.sh`. |
+| `no wi-fi • plug in USB or tap to set up` | Never joined a network — usually a mistyped password. | Tap the chip and re-enter it. |
+| `network blocks this Mac • use USB` | Joined, but the network blocks device-to-device traffic (client/VLAN isolation). | Nothing to fix — use USB here. |
+| `bridge not found • check it's running` | Joined, but the Mac was never found. | Start the bridge, or type its IP. |
+| `pairing token rejected • tap to re-enter` | The token no longer matches the bridge. | Tap the chip and paste the current one. |
+
+Prefer one link over the other? Set `"transport": "auto" | "usb" | "wifi"` in
+`pixie.json`, or in the setup portal. A pinned link is never silently swapped — if it
+is unavailable the panel says so.
+
+Two things that silently kill the USB path, so check them before blaming the network:
+
+- **Don't pin `USB_PORT` unless you have to.** The board's native USB re-enumerates
+  under a *different* `/dev/cu.usbmodem…` every time you replug it or reboot the Mac,
+  so a pinned path goes stale. The bridge falls back to auto-detect when the pinned
+  port disappears, but plain auto-detect (leave `USB_PORT` unset) is the reliable
+  choice. `USB=0` disables the USB path entirely — make sure it isn't set.
+- **Run the bridge as a LaunchAgent** (`./bridge/install-macos.sh`) rather than
+  starting it by hand. It restarts at login and after a crash, which matters most on
+  an isolated office network where USB is your *only* transport. Its log is at
+  `~/Library/Logs/ai-usage-bridge.log`; a healthy start prints
+  `usb: bridge on /dev/cu.usbmodem…`.
+
+If the panel ever freezes for another reason, the firmware runs a 60-second watchdog
+and reboots itself — you shouldn't need to reach for the reset button.
 
 > If Anthropic's usage endpoint transiently rate-limits (HTTP 429 — it shares your
 > token with the menu-bar app), the bridge serves the **last-known-good** reading,

@@ -15,6 +15,7 @@ typedef struct {
   char token[41];
   char host[24];       // "" => discover via mDNS
   char port[6];        // "" => DEFAULT_BRIDGE_PORT
+  char transport[8];   // "auto" | "usb" | "wifi"; "" => auto
   bool present;        // valid JSON was parsed
 } PixieConfig;
 
@@ -38,6 +39,7 @@ static bool sdconf_parse(const char *json, PixieConfig *out) {
   strlcpy(out->host,  doc["bridge_host"] | "", sizeof(out->host));
   long p = doc["bridge_port"] | 0;
   if (p > 0 && p < 65536) snprintf(out->port, sizeof(out->port), "%ld", p);
+  strlcpy(out->transport, doc["transport"] | "", sizeof(out->transport));
   out->present = true;
   return true;
 }

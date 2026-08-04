@@ -496,9 +496,17 @@ async function currentPayload() {
   return cache.body;
 }
 
+// Pick the board's serial port. USB_PORT is a *preference*, not a permanent lock:
+// the S3's native USB re-enumerates under a different /dev/cu.usbmodemNNNNN every
+// time it is replugged (or the Mac reboots), so a pinned path that has since gone
+// away must fall back to auto-detect. Was: `return process.env.USB_PORT` outright,
+// which pinned the transport to a dead node forever — the bridge then retried
+// `stty` on a nonexistent device every 12 s and the device never got a frame again,
+// which is fatal on a LAN with client isolation where USB is the only path left.
 function detectUsbPort() {
   if (process.env.USB === "0") return null;
-  if (process.env.USB_PORT) return process.env.USB_PORT;
+  const pinned = process.env.USB_PORT;
+  if (pinned && existsSync(pinned)) return pinned;
   try {
     const ports = readdirSync("/dev").filter((f) => f.startsWith("cu.usbmodem")).map((f) => "/dev/" + f);
     return ports.length === 1 ? ports[0] : null;   // auto only when unambiguous
@@ -526,11 +534,20 @@ function startUsbWriter() {
   // Re-detects the port every call, so a board plugged in AFTER the bridge started
   // (or one that re-enumerated) is picked up on the next tick — no restart needed.
   // Was: detect once at startup and give up forever if the board wasn't present yet.
+  // Log only on state change: this runs every 12 s forever, so an unconditional
+  // message (or stty's own stderr) buries every other line in the log — the very
+  // thing that hid a wedged transport for a week.
+  let lastNote = "";
+  const note = (msg) => { if (msg !== lastNote) { lastNote = msg; console.log(msg); } };
   const openPort = () => {
     port = detectUsbPort();
-    if (!port) return;                                 // no board yet — retry next tick
+    if (!port) {                                       // no board yet — retry next tick
+      note("  usb: no board port found — waiting for /dev/cu.usbmodem* (replug, or set USB_PORT)");
+      return;
+    }
     try {
-      execFileSync("stty", ["-f", port, "115200", "raw", "-echo"]);   // raw; no shell (injection-safe)
+      // stdio ignored: a vanished port makes stty write to stderr on every tick.
+      execFileSync("stty", ["-f", port, "115200", "raw", "-echo"], { stdio: "ignore" });   // raw; no shell (injection-safe)
       fd = openSync(port, "r+");                        // read + write
       rs = createReadStream(null, { fd, autoClose: false });
       rs.on("data", (chunk) => {
@@ -540,8 +557,11 @@ function startUsbWriter() {
         if (buf.length > 8192) buf = "";                 // runaway guard
       });
       rs.on("error", close);
-      console.log(`  usb: bridge on ${port} — frames out + Remote actions in (set USB=0 to disable)`);
-    } catch { close(); }
+      note(`  usb: bridge on ${port} — frames out + Remote actions in (set USB=0 to disable)`);
+    } catch {
+      close();
+      note(`  usb: ${port} present but not openable — retrying every 12 s`);
+    }
   };
   openPort();
   const tick = async () => {
