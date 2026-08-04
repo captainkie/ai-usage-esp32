@@ -50,15 +50,29 @@ static TransportState transport_evaluate(bool usb_plugged,
   memset(&t, 0, sizeof(t));
   const char *err = last_err ? last_err : "";
   bool usb_fresh = ms_since_usb_frame < USB_FRESH_MS;
+  // Wi-Fi being "connected" only means associated to an AP — an office network with
+  // client isolation joins fine and then can't reach the Mac at all. Only count Wi-Fi
+  // as actually working when it is delivering data right now; computed once here and
+  // reused by the health check below so the two can never disagree.
+  bool wifi_delivering = wifi_connected && have_data && err[0] == 0;
 
   // 1. Pick the link. A locked preference is honoured even when it is down — silently
   //    switching is what hid a week-long USB outage; the user gets told instead.
-  if      (pref == PREF_USB)  t.active = TR_USB;
-  else if (pref == PREF_WIFI) t.active = TR_WIFI;
-  else if (usb_fresh)         t.active = TR_USB;      // matches loop()'s usbFresh rule
-  else if (wifi_connected)    t.active = TR_WIFI;
-  else if (usb_plugged)       t.active = TR_USB;      // cable in but silent -> blame USB
-  else                        t.active = TR_NONE;
+  //
+  //    Under auto, a plugged-in-but-silent cable outranks a Wi-Fi link that is merely
+  //    "connected" (associated but not delivering): on a client-isolated network the
+  //    board joins Wi-Fi and then can't reach the bridge at all, and "network blocks
+  //    this Mac • use USB" is a dead end when USB is already plugged in. "start the
+  //    bridge on your Mac" is the one actionable step, so the cable wins. Healthy
+  //    Wi-Fi still wins over everything except a fresh USB frame. Do not reorder this
+  //    back to `wifi_connected` before `usb_plugged` — that regresses the office case.
+  if      (pref == PREF_USB)   t.active = TR_USB;
+  else if (pref == PREF_WIFI)  t.active = TR_WIFI;
+  else if (usb_fresh)          t.active = TR_USB;      // matches loop()'s usbFresh rule
+  else if (wifi_delivering)    t.active = TR_WIFI;
+  else if (usb_plugged)        t.active = TR_USB;      // cable in but silent -> blame USB
+  else if (wifi_connected)     t.active = TR_WIFI;      // no cable -> explain the Wi-Fi failure
+  else                         t.active = TR_NONE;
 
   strlcpy(t.label, t.active == TR_USB ? "USB" : t.active == TR_WIFI ? "WI-FI" : "--",
           sizeof(t.label));
@@ -66,9 +80,7 @@ static TransportState transport_evaluate(bool usb_plugged,
   // 2. Healthy? USB freshness alone decides the USB case: while USB feeds, loop() skips
   //    the Wi-Fi poll, so g_state.err still holds whatever failed before the cable went in.
   if (t.active == TR_USB && usb_fresh) { t.healthy = true; return t; }
-  if (t.active == TR_WIFI && wifi_connected && have_data && err[0] == 0) {
-    t.healthy = true; return t;
-  }
+  if (t.active == TR_WIFI && wifi_delivering) { t.healthy = true; return t; }
 
   // 3. Explain, most specific first. "\xE2\x80\xA2" is the bullet; the middle dot
   //    U+00B7 has no glyph in this build's Montserrat.

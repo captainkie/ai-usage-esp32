@@ -111,6 +111,24 @@ other code falls through to the generic row. `"wifi"`, `"no bridge"`, `"json"` a
 is unavailable. Silent switching is precisely what hid the week-long USB outage; the
 default is `auto`, so most users never meet this branch.
 
+**Precedence under `PREF_AUTO`.** The table above does not by itself say which link
+wins when USB is plugged-but-silent *and* Wi-Fi is connected-but-failing at the same
+time — that ambiguity produced a real bug (§9 does not cover it either; found during
+on-device verification). The precedence, most specific first:
+
+1. `usb_fresh` → `USB` (fresh frames within `USB_FRESH_MS`)
+2. Wi-Fi *actually delivering* (`wifi_connected && have_data && last_err` empty) → `WI-FI`
+3. `usb_plugged` (cable in, no fresh frame) → `USB`
+4. `wifi_connected` (associated, not delivering) → `WI-FI`
+5. otherwise → `--` (none)
+
+Step 3 outranks step 4: a plugged-in cable beats a Wi-Fi link that is merely
+*associated* to an AP but not delivering data (e.g. a client-isolated office network),
+because "start the bridge on your Mac" is one command away, while "use USB" is a dead
+end when USB is already plugged in. Wi-Fi only outranks the cable when it is actually
+working (step 2) — a healthy link should not be abandoned for a silent one just because
+the cable happens to be in.
+
 ## 5. Where it surfaces
 
 **5.1 The status chip (`lblLive`, top-right, present on every screen)**

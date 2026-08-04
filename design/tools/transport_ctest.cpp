@@ -81,6 +81,33 @@ static void test_locked_does_not_fall_back() {
   CHECK(ev(false, UINT32_MAX, true, true, "", PREF_WIFI).healthy);
 }
 
+static void test_cable_in_beats_useless_wifi() {
+  // Office client isolation: the board joins Wi-Fi but cannot reach the Mac. With the
+  // cable ALSO plugged in, "start the bridge" is the actionable advice — telling the
+  // user to "use USB" while USB is already plugged is a dead end. Found on-device.
+  TransportState t = ev(true, UINT32_MAX, true, false, "http -1", PREF_AUTO);
+  CHECK(t.active == TR_USB);
+  CHECK(!t.healthy);
+  CHECK(strstr(t.hint, "start the bridge") != NULL);
+
+  // Same network with the cable OUT -> the Wi-Fi explanation is the right one.
+  t = ev(false, UINT32_MAX, true, false, "http -1", PREF_AUTO);
+  CHECK(t.active == TR_WIFI);
+  CHECK(strstr(t.hint, "use USB") != NULL);
+
+  // Healthy Wi-Fi still outranks a cable that is plugged in but not delivering
+  // (e.g. charging at home with the bridge stopped).
+  t = ev(true, UINT32_MAX, true, true, "", PREF_AUTO);
+  CHECK(t.active == TR_WIFI);
+  CHECK(t.healthy);
+
+  // A locked link is still never swapped, whatever the other link is doing.
+  t = ev(true, UINT32_MAX, true, true, "", PREF_WIFI);
+  CHECK(t.active == TR_WIFI);
+  t = ev(false, UINT32_MAX, true, true, "", PREF_USB);
+  CHECK(t.active == TR_USB);
+}
+
 static void test_pref_parse() {
   CHECK(transport_pref_parse("auto") == PREF_AUTO);
   CHECK(transport_pref_parse("usb")  == PREF_USB);
@@ -104,6 +131,7 @@ int main() {
   test_client_isolation();
   test_error_mapping();
   test_locked_does_not_fall_back();
+  test_cable_in_beats_useless_wifi();
   test_pref_parse();
   test_buffers_bounded();
   printf(fails ? "\n%d CHECK(s) FAILED\n" : "\nALL PASS\n", fails);
