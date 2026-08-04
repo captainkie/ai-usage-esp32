@@ -11,6 +11,7 @@
 #include "config.h"
 #include "wifistore.h"       // NVS AP store (seeds WiFiMulti)
 #include "sdconf.h"          // read-only TF-card /pixie.json
+#include "transport.h"       // link-state decision logic + PREF_* preference
 
 static Preferences        g_prefs;
 static String             g_host = "";
@@ -20,10 +21,12 @@ static char               g_bridge_desc[48] = "(not set)";
 static WiFiManagerParameter *g_pHost = nullptr;
 static WiFiManagerParameter *g_pPort = nullptr;
 static WiFiManagerParameter *g_pTok  = nullptr;
+static WiFiManagerParameter *g_pTr   = nullptr;
 static WiFiMulti             g_wifiMulti;
 static int      g_naps = 0;             // saved AP count — skip reconnect scans when nothing is stored
 static bool     g_host_pinned = false;  // user typed a bridge host -> don't let mDNS overwrite it
 static uint32_t g_wifi_retry_ms = 0;    // current reconnect backoff (grows while offline, resets on join)
+static int      g_transport_pref = PREF_AUTO;   // user's pinned link (pixie.json / portal)
 
 static void net_save_params() {
   if (g_pHost) g_host  = g_pHost->getValue();
@@ -36,6 +39,11 @@ static void net_save_params() {
   g_prefs.putString("port", g_port);
   g_prefs.putString("token", g_token);
   g_prefs.putBool("prov", true);   // provisioned at least once (host may be blank -> mDNS)
+  if (g_pTr) {
+    String tr = g_pTr->getValue(); tr.trim();
+    g_prefs.putString("transport", tr);
+    g_transport_pref = transport_pref_parse(tr.c_str());
+  }
   g_prefs.end();
   snprintf(g_bridge_desc, sizeof(g_bridge_desc), "%s:%s",
            g_host.length() ? g_host.c_str() : "(mDNS)", g_port.c_str());
@@ -56,6 +64,7 @@ static void net_import_card() {
   if (cfg.token[0]) p.putString("token", cfg.token);
   if (cfg.host[0])  p.putString("host", cfg.host);
   if (cfg.port[0])  p.putString("port", cfg.port);
+  if (cfg.transport[0]) p.putString("transport", cfg.transport);
   p.putBool("prov", true);
   p.end();
 }
@@ -87,6 +96,7 @@ static void net_begin() {
   g_port  = g_prefs.getString("port", g_port);
   g_token = g_prefs.getString("token", g_token);
   bool provisioned = g_prefs.getBool("prov", false) || g_host.length() > 0;
+  g_transport_pref = transport_pref_parse(g_prefs.getString("transport", "auto").c_str());
   g_prefs.end();
   g_host_pinned = (g_host.length() > 0);   // a non-blank host is user/card-set; mDNS must not clobber it
 
@@ -112,8 +122,9 @@ static void net_begin() {
     static WiFiManagerParameter pHost("host", "Mac bridge IP (blank = auto-find via mDNS)", g_host.c_str(), 24);
     static WiFiManagerParameter pPort("port", "Bridge port", g_port.c_str(), 6);
     static WiFiManagerParameter pTok("token", "Pairing token (from the Mac bridge)", g_token.c_str(), 40);
-    g_pHost = &pHost; g_pPort = &pPort; g_pTok = &pTok;
-    wm.addParameter(&pHost); wm.addParameter(&pPort); wm.addParameter(&pTok);
+    static WiFiManagerParameter pTr("transport", "Link: auto / usb / wifi", "auto", 6);
+    g_pHost = &pHost; g_pPort = &pPort; g_pTok = &pTok; g_pTr = &pTr;
+    wm.addParameter(&pHost); wm.addParameter(&pPort); wm.addParameter(&pTok); wm.addParameter(&pTr);
     wm.setSaveParamsCallback(net_save_params);
     bool ok = false;
     while (!ok) {
@@ -146,8 +157,13 @@ static void net_portal() {
   static WiFiManagerParameter pHost("host", "Mac bridge IP", g_host.c_str(), 24);
   static WiFiManagerParameter pPort("port", "Bridge port", g_port.c_str(), 6);
   static WiFiManagerParameter pTok("token", "Pairing token (from the Mac bridge)", g_token.c_str(), 40);
-  g_pHost = &pHost; g_pPort = &pPort; g_pTok = &pTok;
-  wm.addParameter(&pHost); wm.addParameter(&pPort); wm.addParameter(&pTok);
+  // Seeded before the static WiFiManagerParameter below: a `static` local's initialiser
+  // runs only once, so passing g_transport_pref's ternary directly would freeze whatever
+  // the preference was on the FIRST call to net_portal() for every call after.
+  const char *tr_seed = g_transport_pref == PREF_USB ? "usb" : g_transport_pref == PREF_WIFI ? "wifi" : "auto";
+  static WiFiManagerParameter pTr("transport", "Link: auto / usb / wifi", tr_seed, 6);
+  g_pHost = &pHost; g_pPort = &pPort; g_pTok = &pTok; g_pTr = &pTr;
+  wm.addParameter(&pHost); wm.addParameter(&pPort); wm.addParameter(&pTok); wm.addParameter(&pTr);
   wm.setSaveParamsCallback(net_save_params);
   wm.startConfigPortal(WM_AP_NAME);
   net_capture_portal(wm);   // save the chosen network into the WiFiMulti store

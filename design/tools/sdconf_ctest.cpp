@@ -6,6 +6,7 @@
 #include <cstring>
 #include "wifistore.h"
 #include "sdconf.h"
+#include "transport.h"
 
 static int fails = 0;
 #define CHECK(c) do { if(!(c)){ printf("FAIL %s:%d %s\n",__FILE__,__LINE__,#c); fails++; } } while(0)
@@ -77,9 +78,26 @@ static void test_sdconf() {
   CHECK(sdconf_parse("", &c) == false);
 }
 
+static void test_transport_field() {
+  PixieConfig c;
+  CHECK(sdconf_parse("{\"wifi\":[],\"transport\":\"usb\"}", &c));
+  CHECK(strcmp(c.transport, "usb") == 0);
+  CHECK(transport_pref_parse(c.transport) == PREF_USB);
+
+  // absent -> empty -> auto
+  CHECK(sdconf_parse("{\"wifi\":[]}", &c));
+  CHECK(c.transport[0] == 0);
+  CHECK(transport_pref_parse(c.transport) == PREF_AUTO);
+
+  // garbage value degrades to auto rather than pinning something unintended
+  CHECK(sdconf_parse("{\"wifi\":[],\"transport\":\"carrier-pigeon\"}", &c));
+  CHECK(transport_pref_parse(c.transport) == PREF_AUTO);
+}
+
 int main() {
   test_parse(); test_merge(); test_cap(); test_roundtrip();
   test_sdconf();
+  test_transport_field();
   printf(fails ? "\n%d FAILURES\n" : "\nALL PASS\n", fails);
   return fails ? 1 : 0;
 }
