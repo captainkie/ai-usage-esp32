@@ -154,14 +154,27 @@ static void net_begin() {
 static void net_portal() {
   WiFiManager wm;
   wm.setConfigPortalTimeout(WM_PORTAL_TIMEOUT_S);
-  static WiFiManagerParameter pHost("host", "Mac bridge IP", g_host.c_str(), 24);
-  static WiFiManagerParameter pPort("port", "Bridge port", g_port.c_str(), 6);
-  static WiFiManagerParameter pTok("token", "Pairing token (from the Mac bridge)", g_token.c_str(), 40);
-  // Seeded before the static WiFiManagerParameter below: a `static` local's initialiser
-  // runs only once, so passing g_transport_pref's ternary directly would freeze whatever
-  // the preference was on the FIRST call to net_portal() for every call after.
+  // These WiFiManagerParameter locals are `static`: the constructor - and therefore the
+  // evaluation of whatever is passed as its "current value" argument - runs only the
+  // FIRST time control reaches the declaration. Every later call to net_portal() skips
+  // construction entirely, so seeding from g_host/g_port/g_token/g_transport_pref only in
+  // the constructor call freezes each field at whatever the globals held on the very
+  // first portal open, for every reopen after that. That's actively wrong here: mDNS
+  // updates g_host at runtime as the Mac's IP changes between home and office, so a stale
+  // seed on a second portal open shows the user the OLD IP, which they can easily save
+  // back and clobber the correct one. setValue() is an ordinary method call (not a
+  // constructor), so it runs on every invocation and re-seeds each field from the current
+  // globals right before the field is added to the form. Do NOT "simplify" this back into
+  // the constructor args.
+  static WiFiManagerParameter pHost("host", "Mac bridge IP", "", 24);
+  static WiFiManagerParameter pPort("port", "Bridge port", "", 6);
+  static WiFiManagerParameter pTok("token", "Pairing token (from the Mac bridge)", "", 40);
+  static WiFiManagerParameter pTr("transport", "Link: auto / usb / wifi", "", 6);
+  pHost.setValue(g_host.c_str(), 24);
+  pPort.setValue(g_port.c_str(), 6);
+  pTok.setValue(g_token.c_str(), 40);
   const char *tr_seed = g_transport_pref == PREF_USB ? "usb" : g_transport_pref == PREF_WIFI ? "wifi" : "auto";
-  static WiFiManagerParameter pTr("transport", "Link: auto / usb / wifi", tr_seed, 6);
+  pTr.setValue(tr_seed, 6);
   g_pHost = &pHost; g_pPort = &pPort; g_pTok = &pTok; g_pTr = &pTr;
   wm.addParameter(&pHost); wm.addParameter(&pPort); wm.addParameter(&pTok); wm.addParameter(&pTr);
   wm.setSaveParamsCallback(net_save_params);
