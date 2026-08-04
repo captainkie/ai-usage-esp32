@@ -560,11 +560,18 @@ In `render_cb()`, extend the existing snapshot block (~line 713) to copy the new
 Replace the model-line block (~line 741–744):
 
 ```c
-  // model + effort — when there is no live reading, say WHY and what to do about it
+  // model + effort — when the link is unhealthy, say WHY and what to do about it
   // rather than an indefinite "connecting...".
-  if (have && pr->model[0])      lv_label_set_text(lblModel, pr->model);
+  //
+  // The hint is checked FIRST, before the model name. On a failed fetch loop() keeps
+  // the previous providers block and only clears g_state.ok, so `have` stays true and
+  // pr->model stays populated — testing the model first would mean the hint never
+  // appeared again after the first successful poll. A healthy link produces an empty
+  // hint, so this cannot hide the model name during normal operation (including the
+  // CACHED/429 case, where the link itself is fine).
+  if (tr.hint[0])                lv_label_set_text(lblModel, tr.hint);
+  else if (have && pr->model[0]) lv_label_set_text(lblModel, pr->model);
   else if (have && !pr->linked)  lv_label_set_text(lblModel, "not linked");
-  else if (tr.hint[0])           lv_label_set_text(lblModel, tr.hint);
   else if (have)                 lv_label_set_text(lblModel, "no live data");
   else                           lv_label_set_text(lblModel, "connecting...");
 ```
