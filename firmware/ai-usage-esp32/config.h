@@ -33,6 +33,11 @@ typedef struct { char ssid[33]; char pass[64]; } WifiCred;
 #define HTTP_TIMEOUT_MS    6000
 #define DEFAULT_BRIDGE_PORT 8787
 
+// How long a USB frame counts as "fresh". loop() skips the Wi-Fi poll inside this
+// window, and transport.h calls the link healthy inside it — one constant so the
+// two can never disagree.
+#define USB_FRESH_MS 30000
+
 // ---- render ----
 #define RENDER_INTERVAL_MS 120                   // mascot/gauge animation tick
 #define SCREEN_W 640
