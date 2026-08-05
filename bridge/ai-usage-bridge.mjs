@@ -26,6 +26,7 @@ import { handleVoice, NoSpeech } from "./lib/voice.mjs";
 import { askLLM, providerList, setActiveProvider } from "./lib/voice-providers.mjs";
 import { advertise } from "./lib/mdns.mjs";
 import { USAGE_POLL_MS, USAGE_FRESH_MS, nextBackoffMs, readPeerUsage } from "./lib/usage.mjs";
+import { singleFlightCache } from "./lib/single-flight.mjs";
 // note: execFile is already imported from "node:child_process" above.
 
 const PORT = Number(process.env.PORT || 8787);
@@ -421,8 +422,11 @@ async function buildPayload() {
 /* ------------------------------------------------------------------ *
  * 6. HTTP server                                                     *
  * ------------------------------------------------------------------ */
-let cache = { at: 0, body: null };
 const TTL = 60_000;   // don't hammer Anthropic (shared token → 429); device may poll faster
+// Every consumer — HTTP handlers and the USB writer alike — shares this one builder, so
+// overlapping callers wait on a single build instead of each starting their own and
+// racing to the same rate-limited endpoint. See lib/single-flight.mjs.
+const currentPayload = singleFlightCache(buildPayload, { ttlMs: TTL });
 
 const server = http.createServer(async (req, res) => {
   const url = (req.url || "/").split("?")[0];
@@ -505,11 +509,7 @@ const server = http.createServer(async (req, res) => {
   if (url !== "/usage") return send(res, 404, { ok: false, error: "not found" });
 
   try {
-    const now = Date.now();
-    if (!cache.body || now - cache.at > TTL) {
-      cache = { at: now, body: await buildPayload() };
-    }
-    send(res, 200, cache.body);
+    send(res, 200, await currentPayload());
   } catch (e) {
     send(res, 500, { ok: false, error: e.message });
   }
@@ -521,12 +521,6 @@ const server = http.createServer(async (req, res) => {
  *    (e.g. carried to the office). Auto-on when one usbmodem port is     *
  *    present; set USB=0 to disable, or USB_PORT=/dev/cu.x to pin it.     *
  * ------------------------------------------------------------------ */
-async function currentPayload() {
-  const now = Date.now();
-  if (!cache.body || now - cache.at > TTL) cache = { at: now, body: await buildPayload() };
-  return cache.body;
-}
-
 // Pick the board's serial port. USB_PORT is a *preference*, not a permanent lock:
 // the S3's native USB re-enumerates under a different /dev/cu.usbmodemNNNNN every
 // time it is replugged (or the Mac reboots), so a pinned path that has since gone
