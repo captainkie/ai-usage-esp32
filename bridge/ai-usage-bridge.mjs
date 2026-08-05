@@ -25,6 +25,7 @@ import { loadActionsConfig, validateAction, parseUsbAction } from "./lib/actions
 import { handleVoice, NoSpeech } from "./lib/voice.mjs";
 import { askLLM, providerList, setActiveProvider } from "./lib/voice-providers.mjs";
 import { advertise } from "./lib/mdns.mjs";
+import { USAGE_POLL_MS, USAGE_FRESH_MS, nextBackoffMs, readPeerUsage } from "./lib/usage.mjs";
 // note: execFile is already imported from "node:child_process" above.
 
 const PORT = Number(process.env.PORT || 8787);
@@ -97,8 +98,14 @@ function fetchUsage(token) {
       res.on("end", () => {
         if (res.statusCode === 401 || res.statusCode === 403)
           return reject(new Error("unauthorized"));
-        if (res.statusCode !== 200)
-          return reject(new Error(`http ${res.statusCode}`));
+        if (res.statusCode !== 200) {
+          const err = new Error(`http ${res.statusCode}`);
+          // Retry-After is advice, not a promise — nextBackoffMs decides what to do
+          // with it (Anthropic sends `retry-after: 0` on a usage 429).
+          const after = Number(res.headers["retry-after"]);
+          if (Number.isFinite(after) && after > 0) err.retryAfterMs = after * 1000;
+          return reject(err);
+        }
         try { resolve(JSON.parse(body)); }
         catch { reject(new Error("bad json")); }
       });
@@ -298,18 +305,26 @@ let lastGoodClaude = { model: null, effort: null, five_hour: null, seven_day: nu
 let lastGoodAt = 0;
 
 // Usage-endpoint backoff. It's rate-limited (shared with the menu-bar app), so on a
-// 429 we stop polling it for a growing window (30s → … → 10m) to let the limit
-// recover instead of hammering it every cycle. Reset on the next success.
+// 429 we stop polling it for a growing window to let the limit recover instead of
+// hammering it every cycle. Reset on the next success. The window's shape — and the
+// cap that keeps it inside USAGE_FRESH_MS — lives in lib/usage.mjs.
 let usageBackoffUntil = 0;
 let usageBackoffMs = 0;
-// Gentle cadence for the shared, rate-limited usage endpoint: poll at most this often
-// on success (the 5h/7d window %s move slowly, so 2 min is plenty and halves the 429
-// pressure vs. polling every payload rebuild). A reading younger than USAGE_FRESH_MS
-// still shows LIVE — CACHED only when the data is genuinely old, so a transient 429
-// (very common on a token shared with the menu-bar app + Claude Code) no longer flags
-// CACHED on every cycle.
-const USAGE_POLL_MS  = 120_000;   // min gap between successful usage polls
-const USAGE_FRESH_MS = 300_000;   // reading <5 min old = LIVE; older = CACHED
+// Why a poll last failed. `error` used to be set only on the cycle that actually
+// polled, so during a backoff window /usage reported `stale: true` with no reason at
+// all — a rate-limited bridge looked identical to a frozen one, which is exactly how a
+// 20-minute 429 streak went undiagnosed. Remember it until a poll succeeds.
+let lastUsageError = null;
+
+// Neighbours that already pay for this endpoint and cache the answer on disk. The
+// oh-my-claudecode HUD statusline polls it every 90 s — faster than we do — so when we
+// lose the race its file usually holds a reading newer than ours, free to read.
+// Absent on a machine without the HUD, which is fine: readPeerUsage just returns null.
+const CLAUDE_CFG = process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(HOME, ".claude");
+const PEER_USAGE_PATHS = [
+  path.join(CLAUDE_CFG, "plugins", "oh-my-claudecode", ".usage-cache-anthropic.json"),
+  path.join(CLAUDE_CFG, "plugins", "oh-my-claudecode", ".usage-cache.json"),
+];
 
 // Persist last-known-good to disk so a bridge *restart* (or a cold start during a
 // 429) still shows the last real reading instead of blanking to "no live data".
@@ -348,27 +363,43 @@ async function buildPayload() {
     // duty — after a SUCCESS we push it out by USAGE_POLL_MS (steady, low-pressure
     // cadence); after a FAILURE (e.g. 429) we grow a backoff window instead. Either
     // way we don't re-hit the shared, rate-limited endpoint until the gate opens.
-    let freshUsage = false;
+    // `usageAt` is when the reading we ended up with was actually taken — now for our
+    // own poll, the neighbour's fetch time for a borrowed one. It drives lastGoodAt, so
+    // borrowing can never claim data is fresher than it is.
+    let usageAt = 0;
     if (Date.now() >= usageBackoffUntil) {
       try {
         const usage = await fetchUsage(token);
         c.five_hour = usage.five_hour ? win(usage.five_hour) : null;
         c.seven_day = usage.seven_day ? win(usage.seven_day) : null;
-        freshUsage = true;
+        usageAt = Date.now();
+        lastUsageError = null;
         usageBackoffMs = 0; usageBackoffUntil = Date.now() + USAGE_POLL_MS;   // steady cadence
       } catch (e) {
-        usageBackoffMs = Math.min((usageBackoffMs || 15_000) * 2, 600_000);
+        usageBackoffMs = nextBackoffMs(usageBackoffMs, { retryAfterMs: e.retryAfterMs });
         usageBackoffUntil = Date.now() + usageBackoffMs;
-        c.error = e.message;                          // e.g. "http 429" / "unauthorized"
+        lastUsageError = e.message;                   // e.g. "http 429" / "unauthorized"
       }
     }
+    // Didn't get one ourselves? Another tool on this machine may already have a newer
+    // reading cached — take it rather than queue up behind the same rate limit. Costs
+    // no API call, so it also relieves the pressure that caused the miss.
+    if (!usageAt) {
+      const peer = readPeerUsage(PEER_USAGE_PATHS, lastGoodAt);
+      if (peer) {
+        c.five_hour = win(peer.five_hour);
+        c.seven_day = peer.seven_day ? win(peer.seven_day) : null;
+        usageAt = peer.at;
+      }
+    }
+    if (lastUsageError) c.error = lastUsageError;     // visible during a backoff window too
 
     // Sticky last-known-good: keep showing the last real reading instead of blanking.
     for (const k of ["model", "effort", "five_hour", "seven_day"]) {
       if (c[k] == null) c[k] = lastGoodClaude[k];
       else lastGoodClaude[k] = c[k];
     }
-    if (freshUsage && c.five_hour) { lastGoodAt = Date.now(); saveLastGood(); }
+    if (usageAt > lastGoodAt && c.five_hour) { lastGoodAt = usageAt; saveLastGood(); }
     // CACHED only when the reading is genuinely OLD (we've been failing a while), not
     // merely "didn't poll this cycle" — otherwise the gentle cadence + any transient
     // 429 would flag CACHED constantly. A reading within USAGE_FRESH_MS stays LIVE.

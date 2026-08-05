@@ -51,6 +51,14 @@ the **pairing token** to enter on the device.
 - **Claude** is the live feed (the same `GET /api/oauth/usage` Claude Code's
   `/status` uses). `error: "unauthorized"` means the token expired — open Claude
   Code once to refresh.
+- **`stale: true`** (the device's `CACHED` chip) means the reading is over 5 minutes
+  old. That endpoint is rate-limited *per account*, and anything else signed in with
+  the same token draws on the same budget — a menu-bar app, a `/status`, or the
+  [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode) HUD statusline,
+  which polls it every 90 s. Losing that race shows up as `error: "http 429"`, which
+  now stays visible while the bridge waits out its backoff. The bridge also reads the
+  HUD's own cache file when it holds a newer reading, so on a machine running both you
+  usually keep a live number without either of them asking twice.
 - **Codex / Gemini** are *detected* (so the device can list them) but have no
   live usage wired yet — `five_hour`/`seven_day` stay `null`. The firmware shows
   them as selectable with a "no live data" state.
