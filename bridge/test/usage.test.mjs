@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   USAGE_FRESH_MS, BACKOFF_BASE_MS, BACKOFF_MAX_MS,
-  nextBackoffMs, readPeerUsage,
+  nextBackoffMs, readPeerUsage, secsUntil, withCountdown,
 } from "../lib/usage.mjs";
 
 const noJitter = { rand: () => 0.5 };   // 0.5 -> factor 1.0, so the maths is exact
@@ -140,6 +140,48 @@ test("readPeerUsage survives junk and missing fields", () => {
   }))], 0, NOW);
   assert.equal(partial.five_hour.utilization, 22);
   assert.equal(partial.seven_day, null);
+});
+
+/* ---------------------------------------------------------------- *
+ * countdowns                                                       *
+ * ---------------------------------------------------------------- */
+
+test("secsUntil counts forward to a reset and never goes negative", () => {
+  const now = Date.parse("2026-08-05T10:00:00Z");
+  assert.equal(secsUntil("2026-08-05T11:00:00Z", now), 3600);
+  assert.equal(secsUntil("2026-08-05T09:00:00Z", now), 0, "a passed reset clamps to 0");
+  assert.equal(secsUntil(null, now), null);
+  assert.equal(secsUntil("not a date", now), null);
+});
+
+// The bug: reset_in used to be computed once at poll time and then carried around —
+// stored in last-known-good and written to disk. A cached reading therefore counted
+// down from a stale baseline, wrong by exactly its own age, and a bridge restart
+// served a countdown from whenever the file was last written.
+test("withCountdown derives reset_in now, ignoring a stale stored one", () => {
+  const now = Date.parse("2026-08-05T10:00:00Z");
+  const fromDisk = { util: 13, resets_at: "2026-08-05T11:00:00Z", reset_in: 14847 };
+  assert.deepEqual(withCountdown(fromDisk, now), {
+    util: 13, resets_at: "2026-08-05T11:00:00Z", reset_in: 3600,
+  });
+});
+
+// The window objects are shared with lastGoodClaude; mutating one would corrupt the
+// stored copy and the value we persist.
+test("withCountdown returns a new object and leaves the input alone", () => {
+  const now = Date.parse("2026-08-05T10:00:00Z");
+  const original = { util: 13, resets_at: "2026-08-05T11:00:00Z", reset_in: 14847 };
+  const out = withCountdown(original, now);
+  assert.notEqual(out, original);
+  assert.equal(original.reset_in, 14847);
+});
+
+test("withCountdown passes null through and copes with a missing resets_at", () => {
+  const now = Date.parse("2026-08-05T10:00:00Z");
+  assert.equal(withCountdown(null, now), null);
+  assert.equal(withCountdown(undefined, now), null);
+  assert.deepEqual(withCountdown({ util: 13, resets_at: null }, now),
+    { util: 13, resets_at: null, reset_in: null });
 });
 
 test("readPeerUsage tries each path and takes the first usable one", () => {

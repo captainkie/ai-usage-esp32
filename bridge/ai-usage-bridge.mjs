@@ -25,7 +25,7 @@ import { loadActionsConfig, validateAction, parseUsbAction } from "./lib/actions
 import { handleVoice, NoSpeech } from "./lib/voice.mjs";
 import { askLLM, providerList, setActiveProvider } from "./lib/voice-providers.mjs";
 import { advertise } from "./lib/mdns.mjs";
-import { USAGE_POLL_MS, USAGE_FRESH_MS, nextBackoffMs, readPeerUsage } from "./lib/usage.mjs";
+import { USAGE_POLL_MS, USAGE_FRESH_MS, nextBackoffMs, readPeerUsage, withCountdown } from "./lib/usage.mjs";
 import { singleFlightCache } from "./lib/single-flight.mjs";
 // note: execFile is already imported from "node:child_process" above.
 
@@ -223,15 +223,12 @@ const providerLinks = {
  * ------------------------------------------------------------------ */
 function num(x) { return typeof x === "number" ? Math.round(x) : null; }
 
-// Seconds until an ISO reset time — so the device can count down locally
-// without NTP or ISO parsing.
-function secsUntil(iso) {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  return Number.isNaN(t) ? null : Math.max(0, Math.round((t - Date.now()) / 1000));
-}
+// Shape a usage window. Deliberately NO `reset_in` — the countdown is derived from
+// `resets_at` when the payload is finalised (withCountdown), never stored alongside
+// the reading, which is what used to let a cached window count down from a stale
+// baseline. `resets_at` is the durable fact.
 function win(w) {
-  return { util: num(w.utilization), resets_at: w.resets_at ?? null, reset_in: secsUntil(w.resets_at) };
+  return { util: num(w.utilization), resets_at: w.resets_at ?? null };
 }
 
 // Ask Claude a one-shot question for the voice assistant (Pixie). Reuses the same
@@ -401,6 +398,11 @@ async function buildPayload() {
       else lastGoodClaude[k] = c[k];
     }
     if (usageAt > lastGoodAt && c.five_hour) { lastGoodAt = usageAt; saveLastGood(); }
+    // Countdowns last, after the sticky merge, so a borrowed or disk-restored window
+    // ticks from now rather than from whenever it was fetched. Returns fresh objects,
+    // leaving the stored copies (and last-good.json) holding only `resets_at`.
+    c.five_hour = withCountdown(c.five_hour);
+    c.seven_day = withCountdown(c.seven_day);
     // CACHED only when the reading is genuinely OLD (we've been failing a while), not
     // merely "didn't poll this cycle" — otherwise the gentle cadence + any transient
     // 429 would flag CACHED constantly. A reading within USAGE_FRESH_MS stays LIVE.

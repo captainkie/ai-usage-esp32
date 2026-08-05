@@ -43,6 +43,30 @@ export function nextBackoffMs(prevMs, { retryAfterMs = 0, rand = Math.random } =
   return Math.round(base * (0.75 + rand() * 0.5));
 }
 
+/** Seconds until an ISO reset time, so the device counts down locally without NTP. */
+export function secsUntil(iso, now = Date.now()) {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? null : Math.max(0, Math.round((t - now) / 1000));
+}
+
+/**
+ * Stamp a live `reset_in` onto a usage window.
+ *
+ * `reset_in` is DERIVED, never stored. It used to be computed once inside win() and
+ * then carried along with the reading — into last-known-good and out to
+ * last-good.json — so a cached window counted down from a baseline as old as the
+ * reading itself, and a restart served whatever the file was written with. `resets_at`
+ * is the durable fact; the countdown is recomputed from it on every payload.
+ *
+ * Returns a fresh object: these windows are shared with the last-known-good copy, and
+ * mutating one in place would write a stale countdown straight back into the store.
+ */
+export function withCountdown(w, now = Date.now()) {
+  if (!w) return null;
+  return { ...w, reset_in: secsUntil(w.resets_at, now) };
+}
+
 function pct(v) {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
